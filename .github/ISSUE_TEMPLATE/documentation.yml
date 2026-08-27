@@ -1,0 +1,49 @@
+name: Documentation issue
+description: "The docs are wrong, unclear, missing, or out of date."
+labels: ["documentation"]
+body:
+  - type: input
+    id: path
+    attributes:
+      label: "File path"
+      description: "Which file is affected? Use a repo-relative path."
+      placeholder: "README.md, ARCHITECTURE.md, agent.example.toml"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: "Type of issue"
+      options:
+        - "Typo / grammar"
+        - "Factually wrong"
+        - "Unclear / ambiguous"
+        - "Missing information"
+        - "Out of date (code changed, docs didn't)"
+        - "Broken link"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: "Current content"
+      description: "Quote the offending passage verbatim."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: "What it should say"
+      description: "Your proposed replacement text. If you would rather edit the file directly, open a PR instead."
+    validations:
+      required: true
+
+  - type: input
+    id: ref
+    attributes:
+      label: "Link to source of truth (if relevant)"
+      description: "External reference that proves the current text is wrong."
+      placeholder: "https://docs.example.com/..."

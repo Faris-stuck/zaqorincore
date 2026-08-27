@@ -1,0 +1,23 @@
+name: Question
+description: "Ask how something works. Please skim the existing docs (README, ARCHITECTURE, ROADMAP) before opening."
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: "Your question"
+      description: "Be specific. 'How does X work' is too vague; 'How does the agent authenticate to the server in Phase 4' is good."
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: "What you have already tried"
+      description: "Which docs did you read? What did you search for? Saves us both time."
+
+  - type: input
+    id: phase
+    attributes:
+      label: "Phase (if related to a specific phase)"
+      placeholder: "Phase 4"

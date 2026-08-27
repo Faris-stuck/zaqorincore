@@ -1,0 +1,61 @@
+name: Bug report
+description: "Something in the repo is broken or wrong. (Phase 0 covers scaffolding files: typos, broken links, wrong code, etc.)"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for taking the time to report a bug. Please fill in the template — incomplete reports are hard to act on."
+
+  - type: input
+    id: phase
+    attributes:
+      label: "Phase this affects"
+      description: "Which phase of the roadmap does this touch? (see ROADMAP.md)"
+      placeholder: "e.g. Phase 0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "What happened"
+      description: "Clear, factual description of the bug."
+      placeholder: |
+        What did you do?
+        What did you expect to happen?
+        What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Steps to reproduce"
+      description: "Numbered list of steps. If the bug is in docs, paste the snippet that fails."
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: "Environment (if relevant)"
+      description: "OS, language version, tool version."
+      placeholder: "Ubuntu 24.04, go 1.23, python 3.12"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant logs / screenshots"
+      description: "Paste the error output. Wrap in triple backticks. Redact any secrets, IPs, or user data."
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Severity (your best guess)"
+      options:
+        - "Low (cosmetic / doc typo)"
+        - "Medium (something broken but has a workaround)"
+        - "High (blocks a Phase deliverable)"
+        - "Critical (security-relevant — see SECURITY.md instead for these)"
+    validations:
+      required: true

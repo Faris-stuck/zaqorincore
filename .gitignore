@@ -1,0 +1,109 @@
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+config/local.*
+config/secrets.*
+
+# --- Python (server) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- Go (agent) ---
+# Compiled binaries
+/bin/
+/zaqorin-agent
+/zaqorin-server
+# Test binaries
+*.test
+*.out
+# Coverage
+coverage.out
+coverage.html
+# Go workspace files
+go.work
+go.work.sum
+
+# --- Node / TypeScript (dashboard) ---
+node_modules/
+.npm
+.pnpm-store/
+.pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.output/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# --- Build artifacts ---
+/target/
+/artifacts/
+/release/
+/releases/
+*.tar.gz
+*.zip
+*.tgz
+
+# --- Docker / compose ---
+docker-compose.override.yml
+.docker-data/
+
+# --- Database ---
+*.db
+*.sqlite
+*.sqlite3
+postgres-data/
+redis-data/
+
+# --- Logs / runtime ---
+*.log
+logs/
+runtime/
+tmp/
+temp/
+.cache/
+.pids/
+
+# --- Test fixtures that contain real data ---
+testdata/real/
+fixtures/real/

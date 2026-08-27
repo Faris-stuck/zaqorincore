@@ -1,0 +1,49 @@
+name: Feature request
+description: "Propose a new feature. For detector ideas, use this template and add the `detector-idea` label after opening."
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: "Describe the feature you want. Keep it focused — one feature per issue."
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: "What kind of feature"
+      options:
+        - "Detector (catches a specific attack pattern)"
+        - "Dashboard / UI"
+        - "Agent capability (new log source, new response action)"
+        - "Server / API"
+        - "Packaging / install"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem it solves"
+      description: "What real problem does this address? Why is the current behavior not enough?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed solution"
+      description: "Sketch of the implementation. For detectors, include: log source, signature/pattern, threshold, action."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: "What other approaches did you weigh? Why is the proposal better?"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Screenshots, links to CVE, reference writeups, log samples (sanitized)."

@@ -1,0 +1,179 @@
+# Roadmap
+
+> The full public plan. Updated as phases ship. If a phase slips, we update this file in the same commit as the slip — no silent drift.
+
+## Status legend
+
+- ✅ Shipped
+- 🟡 In progress
+- ⏳ Queued
+- ❌ Cancelled / descoped (with reason)
+
+---
+
+## Phase 0 — Spec & scaffolding ✅🟡
+
+**Goal:** establish the project, file the legal/governance paperwork, and write down the architecture so future contributors can ramp up.
+
+**Deliverables:**
+
+- [x] Pick a name and a repo location
+- [x] Create the public repo
+- [x] Pick a license (MIT)
+- [x] Write the README
+- [x] Write the architecture document
+- [x] Write the security disclosure policy
+- [x] Write the code of conduct
+- [x] Write the contributing guide
+- [x] Write the issue / PR templates
+- [ ] First GitHub Release tagged `v0.0.0` (this scaffolding)
+
+**Done when:** the repo passes a "first impression" review — a random developer can land on the README, understand what the project does, and decide whether to use it in under 90 seconds.
+
+---
+
+## Phase 1 — Agent MVP ⏳
+
+**Goal:** a Go single-binary agent that tails a log file and pushes structured events to a server over WebSocket. No detection, no response — just transport.
+
+**Deliverables:**
+
+- [ ] `agent/` directory with a Go module
+- [ ] `tailer` package with rotation-safe file tailing
+- [ ] `transport` package with WebSocket client and reconnect
+- [ ] `cmd/zaqorin-agent` binary
+- [ ] Systemd unit file
+- [ ] Config file format (TOML or YAML — we will pick one in this phase)
+- [ ] `make build` producing a static binary for `linux/amd64` and `linux/arm64`
+- [ ] Smoke test: a fake server that just logs what the agent sends
+
+**Done when:** an operator can install the agent on a Linux host, point it at any WebSocket echo server, and see their `auth.log` lines arrive in real time.
+
+---
+
+## Phase 2 — Central server MVP ⏳
+
+**Goal:** a FastAPI server that accepts events from agents, persists them, and serves a minimal dashboard.
+
+**Deliverables:**
+
+- [ ] `server/` directory with a Python project (Poetry or `uv`)
+- [ ] `POST /api/v1/events` (HTTP fallback) and `WS /api/v1/events` (streaming)
+- [ ] PostgreSQL schema + migrations (alembic)
+- [ ] Redis Streams integration for in-process event bus
+- [ ] `docker compose up` brings up the whole stack locally
+- [ ] `dashboard/` — a minimal React page that lists hosts and shows a live event tail
+- [ ] Health check endpoint
+
+**Done when:** an agent from Phase 1 can be pointed at the Phase 2 server, and the dashboard shows events arriving in real time.
+
+---
+
+## Phase 3 — Detector: SSH brute-force ⏳
+
+**Goal:** the first end-to-end detection. A detector plugin that catches a burst of failed SSH logins and raises an alert.
+
+**Deliverables:**
+
+- [ ] `server/detectors/ssh_bruteforce.py` plugin
+- [ ] Sliding-window state in Redis (per source IP)
+- [ ] Configurable threshold and window length
+- [ ] Alert row in the dashboard
+- [ ] Unit tests for the detector with a fixture `auth.log`
+
+**Done when:** replaying a synthetic brute-force against a test host produces an alert in the dashboard within 1 second of the threshold being crossed.
+
+---
+
+## Phase 4 — Auto-response: block IP ⏳
+
+**Goal:** close the loop. When a detector fires, the server sends a signed `block_ip` command to the agent, and the agent drops the offender's traffic.
+
+**Deliverables:**
+
+- [ ] HMAC-signed command protocol (per-agent shared secret)
+- [ ] `iptables` (and `nftables`) wrapper on the agent
+- [ ] TTL handling: blocks auto-expire
+- [ ] `dry_run` mode default-on for new agents
+- [ ] Per-detector / per-action allowlist (operator can disable auto-response per detector)
+- [ ] Action history in the dashboard
+
+**Done when:** the SSH brute-force detector from Phase 3, when dry-run is off, causes the agent to block the offending IP within 2 seconds of the threshold being crossed. The block expires after the configured TTL.
+
+---
+
+## Phase 5 — More detectors ⏳
+
+**Goal:** show the plugin architecture pays off by adding detectors without touching the core.
+
+**Deliverables:**
+
+- [ ] `web_attack` — SQLi / XSS / path-traversal / scanner signatures
+- [ ] `network_scan` — port scan detection
+- [ ] `c2_beaconing` — periodic outbound connection analysis (will need Zeek or netflow input — research spike first)
+- [ ] Documentation: how to write a detector
+
+**Done when:** three new detectors land without any changes to the core, and the dashboard shows alerts for all of them on a synthetic workload.
+
+---
+
+## Phase 6 — Auth, multi-user, RBAC ⏳
+
+**Goal:** make the dashboard usable by a small team, not just a single operator.
+
+**Deliverables:**
+
+- [ ] Email + password login with argon2id
+- [ ] Optional TOTP 2FA
+- [ ] Roles: `admin`, `operator`, `viewer`
+- [ ] Per-host ACLs (a user only sees the hosts they are assigned to)
+- [ ] Audit log of operator actions
+
+**Done when:** two users with different roles can be created, and a viewer cannot ack an alert or change a detector config.
+
+---
+
+## Phase 7 — Packaging ⏳
+
+**Goal:** make the install path obvious for a fresh homelab user.
+
+**Deliverables:**
+
+- [ ] One-file `install.sh` for the server
+- [ ] `apt` and `yum` repo (or `deb`/`rpm` packages if the operator network demands them — evaluate in this phase)
+- [ ] Helm chart for Kubernetes-based installs
+- [ ] Reference architecture docs: 1 host, 5 hosts, 50 hosts
+
+**Done when:** a user with a single Linux box can have the server running in under 5 minutes following only the README.
+
+---
+
+## Phase 8 — Public launch ⏳
+
+**Goal:** announce the project to the world.
+
+**Deliverables:**
+
+- [ ] Dedicated docs site (probably a sibling repo + GitHub Pages)
+- [ ] Demo video (under 5 minutes) showing the full loop: trigger → detect → block
+- [ ] Post on the relevant communities (HN, r/selfhosted, r/sysadmin, Lobsters, applicable Discords)
+- [ ] First "stable" release tag (`v1.0.0`)
+
+**Done when:** the GitHub repo shows organic stars / forks / issues from people who are not the maintainer.
+
+---
+
+## Non-goals (for now)
+
+- Cloud-managed SaaS tier
+- macOS / Windows agents
+- Sharing ban lists between ZaqorinCore instances
+- Commercial support contracts
+- Auto-tuning detector thresholds with ML
+- Mobile app
+
+If you need one of these, open an issue and we will talk — but they are not in the plan.
+
+## Feedback
+
+Open an issue, or use the discussion board. Roadmap is a living document and we will update it as reality diverges from the plan.

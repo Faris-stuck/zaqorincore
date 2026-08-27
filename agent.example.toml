@@ -1,0 +1,34 @@
+# Agent (Go) defaults; copy to /etc/zaqorin/agent.toml and edit
+# See ARCHITECTURE.md for field semantics.
+
+# --- Connection ---
+server_url = "wss://zaqorin.example.com:8443/api/v1/events"
+agent_id    = "auto"                  # auto-generate UUID on first run
+auth_token  = "paste-registration-token-here"
+
+# --- Local behavior ---
+log_level     = "info"
+state_dir     = "/var/lib/zaqorin-agent"
+# Dry-run blocks are reported but NOT applied to iptables/nftables.
+# Defaults to true so new agents never accidentally block traffic.
+dry_run       = true
+
+# --- Log sources to tail ---
+# Each entry is a named source. The agent will rotate-safely tail the path
+# and emit structured events to the server.
+[[log_source]]
+name = "auth"
+path = "/var/log/auth.log"
+
+[[log_source]]
+name = "nginx_access"
+path = "/var/log/nginx/access.log"
+
+# --- Auto-response escalation ---
+# The server may send signed block_ip commands. This block controls what
+# the agent is allowed to apply. Anything not listed is refused.
+[response]
+allow_block_ip        = true
+allow_kill_process    = false
+allow_disable_user    = false
+block_default_ttl_sec = 3600          # 1 hour
