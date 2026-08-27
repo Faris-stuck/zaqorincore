@@ -1,0 +1,27 @@
+# Build artifacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+
+# Local config
+.env
+.env.local
+.env.*.local
+
+# Runtime artifacts
+server.log
+server.err
+*.pid
+
+# OS noise
+.DS_Store

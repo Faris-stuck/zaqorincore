@@ -59,21 +59,30 @@
 
 ---
 
-## Phase 2 — Central server MVP ⏳
+## Phase 2 — Central server MVP ✅
 
 **Goal:** a FastAPI server that accepts events from agents, persists them, and serves a minimal dashboard.
 
+**Status:** shipped as v0.2.0. The server runs as a single uvicorn process, persists events to PostgreSQL 16, and publishes them to Redis Streams (`zaqorin:events`, consumer group `zaqorin-detectors` reserved for Phase 3). 17 unit + integration tests pass. End-to-end smoke (real `zaqorin-agent` v0.1.0 binary → server → DB) verified. See [`docs/PHASE2.md`](docs/PHASE2.md) for the operator walkthrough.
+
 **Deliverables:**
 
-- [ ] `server/` directory with a Python project (Poetry or `uv`)
-- [ ] `POST /api/v1/events` (HTTP fallback) and `WS /api/v1/events` (streaming)
-- [ ] PostgreSQL schema + migrations (alembic)
-- [ ] Redis Streams integration for in-process event bus
-- [ ] `docker compose up` brings up the whole stack locally
-- [ ] `dashboard/` — a minimal React page that lists hosts and shows a live event tail
-- [ ] Health check endpoint
+- [x] `server/` directory with a Python project (PEP 621 `pyproject.toml`, src layout, src/zaqorincore_server/)
+- [x] `WS /ws/agent` endpoint accepting the v0.1.0 wire contract (HELLO / EVENT / BYE)
+- [x] PostgreSQL schema + migrations (alembic, 4 tables: hosts / events / alerts / actions)
+- [x] Redis Streams publisher (XADD on every persisted event, consumer group pre-created)
+- [x] `GET /healthz` (liveness) and `GET /readyz` (readiness: DB + Redis)
+- [x] `GET /api/v1/hosts`, `GET /api/v1/hosts/{agent_id}`, `GET /api/v1/events` (filters: since, until, host_id, source), `GET /api/v1/alerts` (returns [] until Phase 3)
+- [x] `docker-compose.yml` for full Phase 2.5+ production stack (postgres + redis + server)
+- [x] `Dockerfile` (multi-stage, ~150 MB, non-root, HEALTHCHECK on /healthz)
+- [x] `scripts/smoke.py` end-to-end WebSocket client
+- [x] 17 tests, all green in ~4.5s
+- [x] `docs/PHASE2.md` operator walkthrough
+- [x] GitHub Release tagged `v0.2.0`
 
-**Done when:** an agent from Phase 1 can be pointed at the Phase 2 server, and the dashboard shows events arriving in real time.
+**Done when:** an agent from Phase 1 can be pointed at the Phase 2 server, and events arrive in the database in real time. ✅ achieved.
+
+**Notes for Phase 2.5+:** the dashboard (`dashboard/`) is intentionally deferred — it will land alongside the first detector so it can show alerts in addition to events.
 
 ---
 

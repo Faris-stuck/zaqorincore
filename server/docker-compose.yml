@@ -1,0 +1,69 @@
+# ZaqorinCore server stack (Phase 2.5+)
+#
+# Use this when you want a self-contained environment without
+# relying on the existing `laporin-redis` (db0) or the host
+# Cogniflux postgres. Default config maps:
+#   postgres -> 127.0.0.1:25432
+#   redis    -> 127.0.0.1:26379
+#   server   -> 127.0.0.1:28000
+#
+# For dev you can reuse the existing containers and skip this
+# stack entirely.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zc-postgres
+    environment:
+      POSTGRES_USER: zaqorin
+      POSTGRES_PASSWORD: ${ZAQORIN_DB_PASSWORD:-zaqorin}
+      POSTGRES_DB: zaqorin
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - zc-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zaqorin -d zaqorin"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: zc-redis
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "127.0.0.1:26379:6379"
+    volumes:
+      - zc-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zc-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ZAQORIN_DATABASE_URL: postgresql+asyncpg://zaqorin:${ZAQORIN_DB_PASSWORD:-zaqorin}@postgres:5432/zaqorin
+      ZAQORIN_REDIS_URL: redis://redis:6379/0
+      ZAQORIN_SERVER_HOST: 0.0.0.0
+      ZAQORIN_SERVER_PORT: 8000
+      ZAQORIN_LOG_LEVEL: info
+    ports:
+      - "127.0.0.1:28000:8000"
+    restart: unless-stopped
+
+volumes:
+  zc-pgdata:
+  zc-redisdata:

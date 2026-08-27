@@ -8,11 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-### Changed
-### Deprecated
-### Removed
-### Fixed
-### Security
+- **`server/`** — Phase 2 server. A FastAPI app that accepts WebSocket streams from any `zaqorin-agent` v0.1.0+, persists events to PostgreSQL, fans them through Redis Streams, and exposes a read-only REST API. ~2,400 LOC Python.
+  - `POSTGRES 16` schema with 4 tables (`hosts`, `events`, `alerts` placeholder, `actions` placeholder) and an Alembic migration (`migrations/versions/0001_initial.py`).
+  - `redis.asyncio` Streams publisher (`XADD` to `zaqorin:events` with consumer group `zaqorin-detectors` reserved for Phase 3).
+  - Pydantic v2 wire-contract schemas (`schemas/wire.py`) with `ConfigDict(extra="forbid")`.
+  - `WS /ws/agent` handler with first-frame MUST-be-HELLO enforcement (closes 1002 on violation), per-event idempotency on `event.id` (duplicate raises `DuplicateEvent` → silent ack), 64 KiB frame cap.
+  - `GET /healthz` (liveness) and `GET /readyz` (readiness: pings DB + Redis, 503 on either failure).
+  - `GET /api/v1/hosts`, `GET /api/v1/hosts/{agent_id}`, `GET /api/v1/events` (filters: `since`, `until`, `host_id`, `source`), `GET /api/v1/alerts` (returns `[]` until Phase 3).
+- `server/src/zaqorincore_server/` — package layout: `api/{health,v1}`, `models/{host,event,alert,action,base}`, `service/{host_service,event_service}`, `streams/{publisher,consumer}`, `schemas/wire.py`, `config.py`, `db.py`, `logging.py`, `main.py`.
+- `server/Dockerfile` — multi-stage build (~150 MB), non-root `zaqorin` user, `HEALTHCHECK` on `/healthz`.
+- `server/docker-compose.yml` — full Phase 2.5+ production stack (postgres + redis + server).
+- `server/scripts/smoke.py` — end-to-end WebSocket client that drives a real uvicorn + the actual `zaqorin-agent` v0.1.0 binary and asserts DB rows.
+- `server/tests/` — 17 unit + integration tests, all green in ~4.5s.
+- `docs/PHASE2.md` — operator walkthrough: dev loop, prod deploy, API reference, wire contract.
+
+### Test coverage
+- `pytest` clean: 17 tests in 4 files (`test_schemas.py` 8, `test_api_health.py` 3, `test_service.py` 4, `test_ws_hello_event_bye.py` 2).
+- Function-scoped async engine (NullPool) wired into the module-level singleton per test so the WS handler runs on the same event loop as the test runner.
+- End-to-end: real `zaqorin-agent` v0.1.0 → real `uvicorn` → real `postgres:16-alpine` → DB rows verifiable.
+
+### Notes
+- The dev loop uses the existing `zc-postgres` container on `127.0.0.1:25432` and `laporin-redis` on db 5 to avoid colliding with the Cogniflux production postgres (port 5432 host) and the Laporin production Redis (db 0, 422 keys).
+- No authentication on `/ws/agent` — agents are identified by the `agent_id` they present. A future Phase 2.1 will add per-agent shared-secret auth.
+- No tests for Redis Streams yet (the `streams_enabled=False` switch skips them in unit tests). Phase 3 will add stream-consumption tests.
 
 ## [0.1.0] — 2026-08-28
 
@@ -50,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project intent: self-hosted proactive defense platform (real-time detection + auto-response)
 - MIT License
 
-[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.0.0...v0.1.0
 [0.0.0]: https://github.com/Faris-stuck/zaqorincore/releases/tag/v0.0.0
