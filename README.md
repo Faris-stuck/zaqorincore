@@ -10,8 +10,9 @@ The whole loop — log tail → stream → detection → alert → action — ru
 
 ## What it does (today)
 
-- 🔎 **Real-time attack detection** — events stream from agent to server over WebSocket/gRPC, detectors run as they arrive
-- 🛡️ **Defensive auto-response** — block IPs via `iptables`/`nftables` directly on the offending host (no shared ban list, no upstream service)
+- ✅ **Log tailing agent (Phase 1)** — a ~5 MB Go single-binary that tails `auth.log` (or any file), packages each line as a structured event, and ships it over WebSocket. Hardened systemd unit, rotation-safe, auto-reconnect.
+- 🔎 **Real-time attack detection (Phase 3)** — events stream from agent to server, detectors run as they arrive
+- 🛡️ **Defensive auto-response (Phase 4)** — block IPs via `iptables`/`nftables` directly on the offending host (no shared ban list, no upstream service)
 - 🧩 **Plugin detectors** — write a detector in Python, drop it in `detectors/`, restart the server
 - 📊 **Multi-host dashboard** — see every protected host, every event, every action from one place
 - 🔐 **Self-hosted** — your logs never leave your network
@@ -22,61 +23,93 @@ The whole loop — log tail → stream → detection → alert → action — ru
 - ❌ No external SaaS. Your server, your data, your rules
 - ❌ No telemetry, no phone-home, no account required
 
-## Quick start (preview — Phase 1+)
+## Quick start
 
-> Currently in **Phase 0 (spec & scaffolding)**. Real install steps land with Phase 1.
+### 1. Run the agent (Phase 1 — works today)
 
 ```bash
-# 1. Clone
+# Clone
 git clone https://github.com/Faris-stuck/zaqorincore.git
-cd zaqorincore
+cd zaqorincore/agent
 
-# 2. Start the central server
-docker compose up -d
+# Build a static binary
+make build
+# -> bin/zaqorin-agent  (~5 MB)
 
-# 3. Install the agent on each host
-curl -sSL https://raw.githubusercontent.com/Faris-stuck/zaqorincore/main/agent/install.sh | bash -s -- \
-    --server https://your-server:8443 \
-    --token <registration-token>
+# One-line echo server (separate terminal) — point the agent at it
+websocat -s 127.0.0.1:9001
 
-# 4. Open the dashboard
-open http://localhost:8080
+# Edit agent.example.toml: set server_url = "ws://127.0.0.1:9001" and
+# add a [[log_source]] pointing at any file on your host.
+./bin/zaqorin-agent --config ./agent.example.toml
 ```
+
+For a full end-to-end check, `make smoke` brings up a websocat echo server, writes 3 lines, and asserts 1 HELLO + 3 EVENT frames arrived.
+
+### 2. Install the agent as a systemd service (Linux)
+
+```bash
+sudo install -m 0755 bin/zaqorin-agent /usr/local/bin/zaqorin-agent
+sudo install -d -m 0755 /etc/zaqorin
+sudo install -m 0600 agent.example.toml /etc/zaqorin/agent.toml
+sudoedit /etc/zaqorin/agent.toml         # set server_url, log sources
+
+sudo cp packaging/zaqorin-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now zaqorin-agent
+sudo journalctl -u zaqorin-agent -f
+```
+
+Full operator walkthrough: [`docs/PHASE1.md`](./docs/PHASE1.md).
+
+### 3. Central server (Phase 2 — not yet shipped)
+
+```bash
+# Will land with Phase 2
+docker compose up -d
+```
+
+Then open `http://localhost:8080` for the dashboard.
 
 ## Architecture
 
 ```
-┌──────────────────┐   WSS/gRPC stream   ┌──────────────────────────┐
-│  AGENT (host A)  │ ──────────────────▶ │                          │
-│  log tailer      │   events            │   CENTRAL SERVER         │
-│  iptables hook   │ ◀────────────────── │   API · detectors        │
-└──────────────────┘   block commands    │   PostgreSQL · Redis     │
-┌──────────────────┐                     │   React dashboard        │
-│  AGENT (host B)  │ ──────────────────▶ │                          │
-│  log tailer      │   events            │                          │
-│  iptables hook   │ ◀────────────────── │                          │
-└──────────────────┘   block commands    └──────────────────────────┘
+┌──────────────────┐   WSS stream          ┌──────────────────────────┐
+│  AGENT (host A)  │ ─────────────────────▶ │                          │
+│  log tailer      │   HELLO/EVENT/BYE      │   CENTRAL SERVER         │
+│  (Phase 4:       │ ◀───────────────────── │   API · detectors        │
+│   iptables hook) │   block commands       │   PostgreSQL · Redis     │
+└──────────────────┘                        │   React dashboard        │
+┌──────────────────┐                        │                          │
+│  AGENT (host B)  │ ─────────────────────▶ │   (Phase 2, not yet)     │
+│  log tailer      │   events               │                          │
+└──────────────────┘                        └──────────────────────────┘
 ```
 
-Details in [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phase plan in [`ROADMAP.md`](./ROADMAP.md).
+The agent's wire frames (`hello`, `event`, `bye`, `command`) are
+versioned and forward-compatible — Phase 1 ships the transport,
+Phase 2 adds the server that consumes it. Details in
+[`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Roadmap snapshot
 
 | Phase | What ships | Status |
 |---|---|---|
-| **0** | Spec, repo scaffolding, governance files | ✅ In progress |
-| **1** | Go agent — log tailer, WebSocket push | ⏳ Next |
-| **2** | Central server (FastAPI + PostgreSQL + Redis) | ⏳ |
+| **0** | Spec, repo scaffolding, governance files | ✅ Shipped (v0.0.0) |
+| **1** | Go agent — log tailer, WebSocket push, systemd | ✅ Shipped (v0.1.0) |
+| **2** | Central server (FastAPI + PostgreSQL + Redis) | ⏳ Next |
 | **3** | Detector plugin: SSH brute-force | ⏳ |
-| **4** | Auto-response: agent-side `iptables` block | ⏳ |
+| **4** | Auto-response: agent-side `iptables` block + HMAC | ⏳ |
 | **5** | Detectors: web attack, network scan, C2 beaconing | ⏳ |
 | **6** | Auth + multi-user + RBAC | ⏳ |
 | **7** | Packaging: Docker compose + Helm + install scripts | ⏳ |
 | **8** | Public launch + docs site | ⏳ |
 
+Full plan in [`ROADMAP.md`](./ROADMAP.md). Per-phase change log in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ## Project status
 
-⚠️ **Early stage.** Source code lands in Phase 1 (estimated 1–2 weeks from now). Until then, the repo is governance, documentation, and a public commitment to the design.
+⚠️ **Phase 1 shipped.** The agent runs today and can stream `auth.log` (or any file) to a WebSocket server. The central server, detectors, and auto-response land in Phases 2-4.
 
 If you want to follow along, ⭐ the repo or watch releases.
 

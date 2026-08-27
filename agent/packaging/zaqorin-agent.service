@@ -1,0 +1,93 @@
+# ZaqorinCore Agent systemd unit
+#
+# Phase 1 hardening posture (to be tightened further in Phase 4 when
+# the agent needs only the iptables capability, not full root):
+#
+#   - User=root because /var/log/auth.log is root-readable only.
+#   - StateDirectory=zaqorin-agent -> /var/lib/zaqorin-agent
+#   - LogsDirectory=zaqorin-agent  -> /var/log/zaqorin-agent
+#   - ProtectSystem=strict, ProtectHome=true, PrivateTmp=true
+#   - ReadWritePaths scoped to the runtime dirs we actually touch.
+#   - NoNewPrivileges=true (we never want a setuid escape).
+#   - RestrictNamespaces, RestrictRealtime, LockPersonality, etc.
+#
+# To install:
+#   1. Build:        make build
+#   2. Copy binary:  sudo install -m 0755 bin/zaqorin-agent /usr/local/bin/zaqorin-agent
+#   3. Copy unit:    sudo install -m 0644 packaging/zaqorin-agent.service /etc/systemd/system/zaqorin-agent.service
+#   4. Create user:  (none required; runs as root for Phase 1)
+#   5. Make dirs:    sudo install -d -m 0755 -o root -g root /etc/zaqorin
+#   6. Drop config:  sudo cp agent.example.toml /etc/zaqorin/agent.toml && sudo chmod 0600
+#   7. Enable:       sudo systemctl daemon-reload && sudo systemctl enable --now zaqorin-agent
+#   8. Verify:       sudo systemctl status zaqorin-agent && sudo journalctl -u zaqorin-agent -f
+
+[Unit]
+Description=ZaqorinCore Agent (Phase 1: log tailing + WebSocket transport)
+Documentation=https://github.com/Faris-stuck/zaqorincore
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# --- Paths ---
+Environment=ZAQORIN_CONFIG=/etc/zaqorin/agent.toml
+ExecStart=/usr/local/bin/zaqorin-agent --config ${ZAQORIN_CONFIG}
+
+# --- Runtime directories ---
+StateDirectory=zaqorin-agent
+LogsDirectory=zaqorin-agent
+RuntimeDirectory=zaqorin-agent
+RuntimeDirectoryMode=0750
+
+# --- Lifecycle ---
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+KillMode=mixed
+KillSignal=SIGINT
+SuccessExitStatus=0
+
+# --- Resource limits ---
+LimitNOFILE=65536
+LimitNPROC=512
+MemoryMax=128M
+TasksMax=64
+
+# --- Privilege & filesystem hardening ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# Phase 1 needs to READ /var/log/* and WRITE /var/lib and /var/log/zaqorin-agent.
+# Phase 4 will tighten ReadOnlyPaths=/var/log and add CAP_NET_ADMIN only.
+ReadWritePaths=/var/lib/zaqorin-agent /var/log/zaqorin-agent
+ReadOnlyPaths=/var/log /etc/zaqorin
+
+# --- Network (Phase 1: only outbound WSS) ---
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+# Phase 1 server is set by the operator; allow outbound to anywhere so a
+# homelab can point at a private server. Tighten this with
+# IPAddressAllow= for production deployments.
+IPAddressAllow=any
+
+# --- Optional: load env from /etc/zaqorin/zaqorin-agent.env ---
+# EnvironmentFile=-/etc/zaqorin/zaqorin-agent.env
+
+[Install]
+WantedBy=multi-user.target

@@ -11,7 +11,7 @@
 
 ---
 
-## Phase 0 — Spec & scaffolding ✅🟡
+## Phase 0 — Spec & scaffolding ✅
 
 **Goal:** establish the project, file the legal/governance paperwork, and write down the architecture so future contributors can ramp up.
 
@@ -26,26 +26,34 @@
 - [x] Write the code of conduct
 - [x] Write the contributing guide
 - [x] Write the issue / PR templates
-- [ ] First GitHub Release tagged `v0.0.0` (this scaffolding)
+- [x] First GitHub Release tagged `v0.0.0` (this scaffolding)
 
 **Done when:** the repo passes a "first impression" review — a random developer can land on the README, understand what the project does, and decide whether to use it in under 90 seconds.
 
 ---
 
-## Phase 1 — Agent MVP ⏳
+## Phase 1 — Agent MVP ✅
 
 **Goal:** a Go single-binary agent that tails a log file and pushes structured events to a server over WebSocket. No detection, no response — just transport.
 
+**Status:** shipped as v0.1.0. The agent builds into a ~5 MB static binary, has end-to-end smoke coverage (HELLO + N EVENT frames), and ships with a hardened systemd unit. See [`docs/PHASE1.md`](docs/PHASE1.md) for the operator walkthrough.
+
 **Deliverables:**
 
-- [ ] `agent/` directory with a Go module
-- [ ] `tailer` package with rotation-safe file tailing
-- [ ] `transport` package with WebSocket client and reconnect
-- [ ] `cmd/zaqorin-agent` binary
-- [ ] Systemd unit file
-- [ ] Config file format (TOML or YAML — we will pick one in this phase)
-- [ ] `make build` producing a static binary for `linux/amd64` and `linux/arm64`
-- [ ] Smoke test: a fake server that just logs what the agent sends
+- [x] `agent/` directory with a Go module
+- [x] `internal/event` — wire schema (UUID, RFC3339Nano UTC, snake_case)
+- [x] `internal/tailer` — rotation-safe file tailing (ReOpen, SEEK_END, missing-file retry)
+- [x] `internal/transport` — WebSocket client with reconnect (1s/2s/4s/…/30s) and heartbeat
+- [x] `internal/config` — TOML loader with strict validation
+- [x] `internal/logger` — slog wrapper, JSON/text format
+- [x] `internal/app` + `cmd/zaqorin-agent` — wiring + signal handling
+- [x] Systemd unit file (`packaging/zaqorin-agent.service`, hardened)
+- [x] Config file format (TOML, see `agent.example.toml`)
+- [x] `make build` producing a static binary for `linux/amd64` and `linux/arm64`
+- [x] `make smoke` end-to-end: HELLO + 3 EVENT frames against a `websocat` echo server
+- [x] CI: `go test -race`, `go vet`, build, smoke on push/PR (`.github/workflows/ci.yml`)
+- [x] `docs/PHASE1.md` operator walkthrough
+- [x] GitHub Release tagged `v0.1.0`
 
 **Done when:** an operator can install the agent on a Linux host, point it at any WebSocket echo server, and see their `auth.log` lines arrive in real time.
 

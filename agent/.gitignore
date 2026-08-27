@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Build artifacts
+/bin/
+/zaqorin-agent
+*.test
+*.out
+coverage.out
+coverage.html
