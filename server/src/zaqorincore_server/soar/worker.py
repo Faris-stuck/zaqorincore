@@ -337,15 +337,25 @@ class SoarWorker:
                 # first. This is a deliberate choice: a
                 # fresh critical alert is more valuable
                 # than a stale retry.
+                #
+                # Before dropping, persist the oldest item
+                # to the dead-letter store so the alert is
+                # not silently lost. The new item gets the
+                # same treatment if the re-put still fails.
+                # See Cybersec review IMP-4.
                 try:
-                    self._queue.get_nowait()
+                    dropped = self._queue.get_nowait()
                     self._queue.task_done()
+                    self._dead_letter_queue_full(dropped)
                 except asyncio.QueueEmpty:
                     pass
                 try:
                     self._queue.put_nowait(item)
                 except asyncio.QueueFull:
-                    pass
+                    # Even the new item can't be enqueued.
+                    # Persist it directly to dead-letter so
+                    # the operator can replay it manually.
+                    self._dead_letter_queue_full(item)
 
     # ─── Delivery loop ───────────────────────────────────────────
     async def _drain_queue_once(self) -> None:
@@ -546,10 +556,26 @@ class SoarWorker:
             file_sha = hashlib.sha256(raw).hexdigest()
             body["file_sha256"] = file_sha
             raw = json.dumps(body, indent=2, sort_keys=True).encode("utf-8")
-            # Write atomically: tmp + rename.
+            # Write atomically with mode 0o600 (owner-only)
+            # so a multi-user host can't read another
+            # operator's alert content via a world-readable
+            # umask default. See Cybersec review IMP-3.
             tmp = path.with_suffix(path.suffix + ".tmp")
-            with tmp.open("wb") as fh:
-                fh.write(raw)
+            fd = os.open(
+                tmp,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(raw)
+            except Exception:
+                # Best-effort cleanup of the temp file.
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
             os.replace(tmp, path)
         except OSError as e:
             log.warning(
@@ -557,6 +583,29 @@ class SoarWorker:
                 path=str(path),
                 error=str(e),
             )
+
+    def _dead_letter_queue_full(self, item: _PendingDelivery) -> None:
+        """Write a dropped-on-queue-full alert directly to
+        the dead-letter store with a synthetic outcome
+        (status_code=0, error='queue full'). Used by the
+        enqueue path when `asyncio.Queue` overflows so
+        that an alert is never silently lost when the
+        worker can't keep up. See Cybersec review IMP-4.
+        """
+        now = datetime.now(timezone.utc)
+        outcome = DeliverOutcome(
+            result=DeliveryResult(
+                backend=item.backend_name,
+                alert_id=str(item.alert.id),
+                status_code=0,
+                attempted_at=now,
+                duration_ms=0,
+                error="queue full",
+                dead_lettered=True,
+            ),
+            payload_sha256="",
+        )
+        self._maybe_dead_letter(item, outcome, attempt=item.attempt)
 
     # ─── Read paths used by the API ───────────────────────────────
     def list_dead_letters(self) -> list[dict[str, Any]]:
