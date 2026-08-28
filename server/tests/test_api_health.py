@@ -29,4 +29,4 @@ async def test_readyz_live(app_client: AsyncClient) -> None:
 async def test_alerts_empty(app_client: AsyncClient) -> None:
     r = await app_client.get("/api/v1/alerts")
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json() == {"items": [], "next_before": None}

@@ -9,7 +9,7 @@ mismatch that bites any test that uses a session-scoped async engine
 plus async fixtures.
 
 Required environment before running tests:
-    ZAQORIN_DATABASE_URL=postgresql+asyncpg://zaqorin:zaqorin@127.0.0.1:25432/zaqorin_test
+    ZAQORIN_DATABASE_URL=postgresql+asyncpg://zaqorin:***@127.0.0.1:25432/zaqorin_test
     ZAQORIN_REDIS_URL=redis://127.0.0.1:6379/15
 """
 
@@ -38,6 +38,9 @@ os.environ.setdefault("ZAQORIN_REDIS_URL", "redis://127.0.0.1:6379/15")
 # to keep their event loops isolated. The streaming integration
 # (smoke.py) still hits Redis.
 os.environ.setdefault("ZAQORIN_STREAMS_ENABLED", "false")
+# Tests don't start the detector runner either; detector tests
+# drive the runner directly.
+os.environ.setdefault("ZAQORIN_DETECTORS_ENABLED", "false")
 
 from zaqorincore_server.config import get_settings  # noqa: E402
 from zaqorincore_server.models import Base  # noqa: E402
@@ -106,7 +109,7 @@ async def session(engine) -> AsyncIterator[AsyncSession]:
 
 
 @pytest_asyncio.fixture
-async def app_client() -> AsyncIterator[AsyncClient]:
+async def app_client(engine) -> AsyncIterator[AsyncClient]:
     """An httpx AsyncClient wired to the FastAPI app via ASGI in-memory."""
     from zaqorincore_server.main import create_app  # noqa: PLC0415
 

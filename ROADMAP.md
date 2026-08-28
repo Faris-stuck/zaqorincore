@@ -59,7 +59,74 @@
 
 ---
 
-## Phase 2 — Central server MVP ✅
+## Phase 3 — Detector pipeline ✅
+
+**Goal:** consume events from Redis Streams, run detector
+plugins, persist alerts.
+
+**Status:** shipped as v0.3.0. One detector
+(`ssh_bruteforce`) ships in this phase; the framework is
+plugin-friendly so adding the next one (web_attack,
+network_scan, c2_beaconing) is a single new file.
+
+**Architecture:**
+
+- `server/detectors/base.py` — `Detector` protocol,
+  `DetectorContext`, `DetectionResult`, `ParsedEvent`.
+- `server/detectors/ssh_bruteforce.py` — sliding-window
+  rule over failed SSH-login events. State in Redis
+  sorted sets, fail-open on errors. Cooldown via
+  `SET NX EX` on a separate key.
+- `server/detectors/runner.py` — owns the XREADGROUP
+  loop, runs in the FastAPI lifespan as a background
+  task. Acks on success OR on error (otherwise a single
+  bad message blocks the stream).
+- `server/detectors/alert_service.py` — `write_alert`
+  inserts one `Alert` row per `DetectionResult`.
+- `GET /api/v1/alerts` — paginated, filterable by
+  `host_id`, `detector`, `since`, `until`.
+
+**Tunables (env vars):**
+- `ZAQORIN_DETECTORS_ENABLED` (default `True`)
+- `ZAQORIN_SSH_BRUTEFORCE_THRESHOLD` (default 5)
+- `ZAQORIN_SSH_BRUTEFORCE_WINDOW_SEC` (default 60)
+- `ZAQORIN_SSH_BRUTEFORCE_COOLDOWN_SEC` (default 300)
+
+**Verified:** 28/28 pytest pass, E2E via
+`scripts/smoke_detector.py` — 5 WS events with
+`status=failed, source_ip=203.0.113.42` → exactly 1
+`ssh_bruteforce` alert in DB, retrievable via
+`/api/v1/alerts`.
+
+## Phase 4 — Auto-response (next) ⏳
+
+**Goal:** when a detector fires, queue a signed `COMMAND`
+frame to the affected host. The agent applies
+`iptables -I INPUT -s <ip> -j DROP` (or `nftables`) with
+a TTL.
+
+**Planned approach:**
+
+- Add a `actions` queue inside the detector runner
+  (after `write_alert` succeeds, the runner creates a
+  pending `Action` row).
+- A new background task (the **dispatcher**) reads
+  pending actions, looks up the host's per-agent shared
+  secret, signs the command frame (HMAC-SHA256 over the
+  canonical JSON), and writes the command onto a
+  per-host WebSocket (`ws://agent/cmd/<agent_id>`) or
+  pushes it onto a per-host Redis list that the agent
+  long-polls.
+- The agent acks the command; the dispatcher marks the
+  action as `applied` or `failed`.
+
+**Risk:** we want the auto-block to be **opt-in per
+host**. Default for a freshly registered host is
+`auto_block: false`.
+
+**Defer to:** Phase 5 if scope is too large. The
+detector + alert loop is already useful without
+auto-response.
 
 **Goal:** a FastAPI server that accepts events from agents, persists them, and serves a minimal dashboard.
 

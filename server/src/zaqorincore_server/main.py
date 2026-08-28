@@ -4,11 +4,13 @@ Lifespan:
   * configure logging
   * open the SQLAlchemy async engine
   * open the Redis client + ensure the consumer group exists
-  * on shutdown, close both
+  * start the detector runner (Phase 3) as a background task
+  * on shutdown, cancel the runner, close Redis + DB
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,6 +22,7 @@ from .api import health, v1
 from .api.v1 import alerts, events, hosts, stream
 from .config import get_settings
 from .db import dispose_engine, init_engine
+from .detectors import runner as detector_runner
 from .logging import configure_logging, get_logger
 from .streams.publisher import close_redis, ensure_consumer_group, get_redis
 
@@ -37,15 +40,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     init_engine()
     settings = get_settings()
+    runner_task: asyncio.Task[None] | None = None
     if settings.streams_enabled:
         # Touch Redis so we fail fast at startup if it's unreachable.
         await get_redis()
         await ensure_consumer_group()
+        if settings.detectors_enabled:
+            runner_task = asyncio.create_task(
+                detector_runner.run(), name="zaqorin-detector-runner"
+            )
 
     try:
         yield
     finally:
         log.info("zaqorin shutting down")
+        if runner_task is not None and not runner_task.done():
+            runner_task.cancel()
+            try:
+                await runner_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                log.warning("detector runner shutdown error: %s", exc)
         if settings.streams_enabled:
             await close_redis()
         await dispose_engine()
@@ -54,10 +70,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ZaqorinCore Server",
-        version="0.2.0",
+        version="0.3.0",
         description=(
             "Central server for ZaqorinCore. Accepts WebSocket streams "
-            "from zaqorin-agent and persists events to PostgreSQL."
+            "from zaqorin-agent, persists events to PostgreSQL, runs "
+            "detectors, and persists alerts."
         ),
         lifespan=lifespan,
     )

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-28
+
+### Added
+- **`server/detectors/`** — Phase 3 detector pipeline. A background asyncio task consumes events off the `zaqorin:events` Redis stream via the `zaqorin-detectors` consumer group, fans them through registered detector plugins, and persists `Alert` rows when a rule fires.
+- **`ssh_bruteforce` detector** — sliding-window rule over failed SSH-login events. Threshold (default 5 failed logins in 60s) and cooldown (default 300s) are env-var-tunable. State lives in Redis sorted sets; the detector is fail-open on Redis errors.
+- **`GET /api/v1/alerts`** now returns a real paginated, filterable list (the v0.2.0 stub is gone). Response shape: `{ items: [...], next_before: <iso|null> }`. Filters: `host_id`, `detector`, `since`, `until`, `limit`.
+- **`scripts/smoke_detector.py`** — E2E smoke that drives the running server with 5 SSH failed-login events from `203.0.113.42` and asserts exactly one `ssh_bruteforce` alert lands in DB.
+- `docs/PHASE3.md` — operator walkthrough of the detector framework.
+
+### Changed
+- **Server version** bumped to 0.3.0.
+- **Settings** added `detectors_enabled`, `ssh_bruteforce_threshold`, `ssh_bruteforce_window_sec`, `ssh_bruteforce_cooldown_sec`.
+- **pyproject.toml** `asyncio_default_fixture_loop_scope` changed from `session` to `function` (required by the new detector tests that talk to real Redis on the test event loop).
+- The v0.2.0 `[Unreleased]` notes (`stream_name` reserved for Phase 3, `streams_enabled` test flag, etc.) are now obsolete and removed from the Unreleased section.
+
+### Fixed
+- **Detached host_id in detector tests** — every `_make_event()` was generating a new `host_id` which meant every event went to a different Redis key. Tests now use a stable `_TEST_HOST_ID` per module.
+- **FK violation in alert writer tests** — tests now insert a host row before writing an alert with a non-null `host_id`.
+- **`test_alerts_empty`** in `test_api_health.py` — was asserting `r.json() == []` (the old stub shape). Now asserts the new `{"items": [], "next_before": null}` shape.
+
+### Test coverage
+- `pytest` clean: **28 tests in 6 files** (`test_schemas.py` 8, `test_api_health.py` 3, `test_service.py` 4, `test_ws_hello_event_bye.py` 2, `test_detector_ssh_bruteforce.py` 6, `test_alert_service.py` 2, `test_api_alerts.py` 3) in ~7s.
+- E2E: `scripts/smoke_detector.py` PASS — 5 events with `status=failed, source_ip=203.0.113.42` → 1 alert in DB.
+- E2E (regression): `scripts/smoke.py` PASS — 3 events without SSH metadata → 0 alerts (detector filter works).
+
+## [0.2.0] — 2026-08-28
+
 ### Added
 - **`server/`** — Phase 2 server. A FastAPI app that accepts WebSocket streams from any `zaqorin-agent` v0.1.0+, persists events to PostgreSQL, fans them through Redis Streams, and exposes a read-only REST API. ~2,400 LOC Python.
   - `POSTGRES 16` schema with 4 tables (`hosts`, `events`, `alerts` placeholder, `actions` placeholder) and an Alembic migration (`migrations/versions/0001_initial.py`).
@@ -68,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project intent: self-hosted proactive defense platform (real-time detection + auto-response)
 - MIT License
 
-[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.0.0...v0.1.0
 [0.0.0]: https://github.com/Faris-stuck/zaqorincore/releases/tag/v0.0.0

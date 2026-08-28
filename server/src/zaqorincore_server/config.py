@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     stream_maxlen: int = 10_000
     stream_group: str = "zaqorin-detectors"
 
+    # --- Detectors ---
+    # When False, the server skips starting the detector runner
+    # task in its lifespan. Tests that don't want a background
+    # event loop set this to False.
+    detectors_enabled: bool = True
+    # Per-detector tunables. Phase 5 may move these to DB-backed
+    # `detector_configs` for live tuning; for now they're
+    # static env vars.
+    ssh_bruteforce_threshold: int = Field(default=5, ge=1, le=10_000)
+    ssh_bruteforce_window_sec: int = Field(default=60, ge=1, le=86_400)
+    ssh_bruteforce_cooldown_sec: int = Field(default=300, ge=1, le=86_400)
+
     # --- Limits / sanity ---
     # Reject a single WS frame larger than this. 64 KiB is generous for
     # one event and stops a misbehaving agent from eating memory.
