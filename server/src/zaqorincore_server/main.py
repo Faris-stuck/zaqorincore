@@ -20,7 +20,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from .api import health, v1
-from .api.v1 import alerts, events, hosts, hunt, stream
+from .api.v1 import alerts, canary, evidence, events, hosts, hunt, stream
 from .config import get_settings
 from .db import dispose_engine, get_session_factory, init_engine
 from .detectors import runner as detector_runner
@@ -98,6 +98,8 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(alerts.router)
     app.include_router(hunt.router)
+    app.include_router(canary.router)
+    app.include_router(evidence.router)
 
     return app
 

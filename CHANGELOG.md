@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-28
+
+### Added
+
+- **Canary tokens** (`server/canary.py`, `agent/internal/canary/canary.go`).
+  Deception layer: drop a file or bind a TCP port, watch it via
+  fsnotify, alert on touch. Two of four kinds shipped (`file`,
+  `tcp_socket`); `http_endpoint` and `credential` are stubbed
+  for Phase 8.
+- **Evidence locker** (`server/evidence.py`, `agent/internal/evidence/evidence.go`).
+  When an alert fires, an operator can capture a snapshot of
+  the relevant files, tar+gz them, and POST the bundle. The
+  server verifies SHA-256, writes a sidecar JSON, and HMAC-
+  signs it. Operators verify integrity via `/api/v1/evidence/{id}/verify`.
+- **Operator API** for canary (`/api/v1/canary`) and evidence
+  (`/api/v1/evidence`).
+
+### Changed
+
+- `EvidenceSubmit` wire field renamed `tarball` → `tarball_b64`
+  to make base64 encoding explicit (pydantic v2 `bytes`
+  validation is ambiguous in JSON). Raw `tarball` is still
+  accepted as a legacy alias for tests.
+
 ## [0.6.0] - 2026-08-28
 
 ### Added
