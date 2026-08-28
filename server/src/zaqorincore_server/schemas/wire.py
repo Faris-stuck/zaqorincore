@@ -67,8 +67,8 @@ class ByeFrame(BaseModel):
 
 
 class CommandFrame(BaseModel):
-    """Server -> agent command. Not sent in Phase 2; defined for the
-    wire contract to stay stable."""
+    """Server -> agent command. Phase 4 sends these; v0.1.0 agents
+    parse-and-ignore them (the field set is additive)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -77,6 +77,19 @@ class CommandFrame(BaseModel):
     kind: str = Field(..., min_length=1, max_length=64)
     target: str = Field(..., min_length=1, max_length=512)
     ttl_sec: int | None = Field(default=None, ge=0, le=86_400 * 30)
+    issued_at: str = Field(..., min_length=1, max_length=64)
+    hmac: str = Field(..., min_length=64, max_length=64)
+
+
+class CommandAckFrame(BaseModel):
+    """Agent -> server ack for a CommandFrame. Phase 4 introduces this."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["command_ack"] = "command_ack"
+    id: uuid.UUID
+    status: Literal["applied", "failed"]
+    error: str | None = Field(default=None, max_length=512)
 
 
 # ---- discriminated union ----------------------------------------------
@@ -97,5 +110,6 @@ __all__ = [
     "EventFrame",
     "ByeFrame",
     "CommandFrame",
+    "CommandAckFrame",
     "AgentFrame",
 ]

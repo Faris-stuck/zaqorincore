@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import signal
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -151,8 +152,9 @@ async def _process_one(
             continue
 
         for r in results:
+            alert_id: uuid.UUID | None = None
             try:
-                await write_alert(
+                alert_id = await write_alert(
                     session_factory,
                     detector=r.detector,
                     severity=r.severity,
@@ -167,6 +169,31 @@ async def _process_one(
                     "alert write failed",
                     extra={"detector": r.detector, "err": str(exc)},
                 )
+
+            # Phase 4: if the detector also returned a
+            # DetectionAction, enqueue a pending Action row.
+            # The dispatcher picks it up on its next tick.
+            if alert_id is not None and r.action is not None:
+                try:
+                    from . import action_service
+
+                    await action_service.write_action(
+                        session_factory,
+                        host_id=parsed.host_id,
+                        alert_id=alert_id,
+                        kind=r.action.kind,
+                        target=r.action.target,
+                        ttl_sec=r.action.ttl_sec,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "action enqueue failed",
+                        extra={
+                            "detector": r.detector,
+                            "kind": r.action.kind,
+                            "err": str(exc),
+                        },
+                    )
 
     await redis.xack(ctx.settings.stream_name, ctx.settings.stream_group, msg_id)
 

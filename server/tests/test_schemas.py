@@ -108,6 +108,8 @@ def test_command_frame() -> None:
             "kind": "block_ip",
             "target": "1.2.3.4",
             "ttl_sec": 3600,
+            "issued_at": "2026-08-28T12:00:00Z",
+            "hmac": "a" * 64,
         }
     )
     assert c.kind == "block_ip"

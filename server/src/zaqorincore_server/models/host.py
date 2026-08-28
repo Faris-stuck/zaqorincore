@@ -26,6 +26,16 @@ class Host(Base):
     )
     last_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Phase 4: per-host shared secret for HMAC-signing COMMAND
+    # frames. Generated server-side on first HELLO if absent.
+    # Never exposed via the public REST API.
+    secret: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Phase 4: opt-in flag for the dispatcher. Default false
+    # (Phase 3 detectors queue actions regardless; Phase 4
+    # dispatcher skips hosts with auto_block=false).
+    auto_block: Mapped[bool] = mapped_column(
+        nullable=False, server_default="false", default=False
+    )
     meta: Mapped[dict] = mapped_column(
         JSONB, server_default="{}", nullable=False, default=dict
     )

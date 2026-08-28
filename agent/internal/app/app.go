@@ -20,6 +20,11 @@ import (
 	"github.com/Faris-stuck/zaqorincore/agent/internal/transport"
 )
 
+// Command is re-exported from transport so callers of app don't
+// have to import the transport package just to reference the
+// Command type. Phase 4: response handlers in main.go use this.
+type Command = transport.Command
+
 // Transport is the subset of *transport.Client that app needs. We
 // define it as an interface so tests can substitute a fake without
 // standing up a WebSocket server.
@@ -37,10 +42,11 @@ type TailerSource interface {
 // Dependencies bundles everything Run needs. Tests can override any
 // field to inject fakes.
 type Dependencies struct {
-	Config   *config.Config
-	Logger   *slog.Logger
-	Client   Transport        // optional: if set, used as-is
-	NewTailer func(src config.LogSource, logger *slog.Logger) TailerSource
+	Config         *config.Config
+	Logger         *slog.Logger
+	Client         Transport        // optional: if set, used as-is
+	NewTailer      func(src config.LogSource, logger *slog.Logger) TailerSource
+	CommandHandler func(ctx context.Context, cmd transport.Command) (status string, err error)
 }
 
 // Run starts every tailer, opens the transport, and forwards lines
@@ -69,6 +75,13 @@ func Run(ctx context.Context, deps Dependencies) error {
 		if err != nil {
 			return fmt.Errorf("app: build transport: %w", err)
 		}
+		// Phase 4: wire the response handler. The handler
+		// is created in main.go and passed via deps if
+		// the operator has configured [response] in TOML.
+		// For now we attach a default no-op that always
+		// fails with "no host secret"; main.go replaces
+		// this with the real one if available.
+		client.SetCommandHandler(deps.CommandHandler)
 		tr = client
 	}
 

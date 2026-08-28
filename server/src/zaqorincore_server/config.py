@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # Used by integration tests that don't want a Redis dependency.
     streams_enabled: bool = True
 
+    # --- Dispatcher (Phase 4) ---
+    # When False, the dispatcher is not started; actions stay pending.
+    dispatcher_enabled: bool = True
+    # Poll interval for the action queue. Cheap to be aggressive;
+    # the table has an index on (status, created_at) so the
+    # query stays O(pending) regardless of total actions.
+    dispatcher_poll_sec: float = Field(default=5.0, ge=0.1, le=60.0)
+
 
 _settings: Settings | None = None
 

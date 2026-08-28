@@ -98,7 +98,7 @@ network_scan, c2_beaconing) is a single new file.
 `ssh_bruteforce` alert in DB, retrievable via
 `/api/v1/alerts`.
 
-## Phase 4 — Auto-response (next) ⏳
+## Phase 4 — Auto-response ✅
 
 **Goal:** when a detector fires, queue a signed `COMMAND`
 frame to the affected host. The agent applies
@@ -169,7 +169,7 @@ auto-response.
 
 ---
 
-## Phase 4 — Auto-response: block IP ⏳
+## Phase 4 — Auto-response: block IP ✅
 
 **Goal:** close the loop. When a detector fires, the server sends a signed `block_ip` command to the agent, and the agent drops the offender's traffic.
 

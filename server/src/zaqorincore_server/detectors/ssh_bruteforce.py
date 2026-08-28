@@ -26,7 +26,13 @@ import re
 from typing import Any
 
 from ..config import Settings
-from .base import DetectionResult, Detector, DetectorContext, ParsedEvent
+from .base import (
+    DetectionAction,
+    DetectionResult,
+    Detector,
+    DetectorContext,
+    ParsedEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +147,16 @@ class SSHBruteForceDetector:
                 },
                 cooldown_sec=cooldown_sec,
                 dedup_key=ip,
+                # Phase 4: enqueue an auto-block action. The
+                # dispatcher only fires it for hosts that have
+                # `auto_block=true` and an open WS connection.
+                action=DetectionAction(
+                    kind="block_ip",
+                    target=ip,
+                    # Default block TTL = 1h. Configurable via the
+                    # response section on the agent's TOML.
+                    ttl_sec=3600,
+                ),
             )
         ]
 

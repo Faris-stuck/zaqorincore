@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-28
+
+### Added
+- **Auto-response (Phase 4)**: closed-loop IDS. When the `ssh_bruteforce` detector fires, the server signs a `COMMAND` frame with the affected host's shared secret and pushes it down the existing WebSocket. The agent verifies the HMAC, applies the action, and acks back. Server transitions the row from `pending → dispatched → applied`.
+- **HMAC-SHA256 wire signing** (`server/crypto.py`, `agent/internal/crypto/crypto.go`): byte-stable canonical form `cmd_id|kind|target|ttl_sec|issued_at`, kept in lockstep between Python and Go via shared test cases. Constant-time compare.
+- **`actions` table** + `action_service` (write/mark_dispatched/mark_applied/mark_failed). Migration `0002_auto_block` adds `secret` and `auto_block` columns to `hosts`.
+- **Dispatcher** (`server/dispatcher.py`): single background loop polls `actions` for `pending` rows, looks up the host's WebSocket in a `HostConnectionRegistry`, signs the command, sends it, marks dispatched.
+- **`PATCH /api/v1/hosts/{id}`** — operator gate to flip `auto_block` on/off. Default `false`; no host auto-blocks without an explicit operator action.
+- **`hello_ack` frame**: server returns the per-host `shared_secret` on first HELLO. Agent persists to `<state_dir>/secret` (mode 0600).
+- **`COMMAND_ACK` wire frame**: agent → server outcome report (`status: applied|failed`, `error: string`).
+- **Agent `response` package** (`agent/internal/response/response.go`): loads secret file, verifies HMAC, applies `block_ip` via `nft add element inet zaqorin blocked_v4 { ip timeout <ttl>s`. DryRun mode for tests. 60s command_id throttle for idempotency.
+- **`scripts/smoke_response.py`** — E2E: 5 SSH failed-login events → 1 alert → 1 signed COMMAND → HMAC verify → ACK → action `applied`. Proves the full loop.
+- **Tests**: 55/55 server (was 28, +27 for Phase 4) + 9/9 Go agent tests pass.
+- **`docs/PHASE4.md`** — full architecture, decisions, pitfalls, wire contract, install script for the nftables rule that consults the set.
+
+### Wire contract additions
+- `COMMAND` (server → agent): `type=command, id, kind, target, ttl_sec, issued_at, hmac`
+- `COMMAND_ACK` (agent → server): `type=command_ack, id, status, error?`
+- `HELLO_ACK` (server → agent, on first connect only): `type=hello_ack, agent_id, shared_secret`
+
+### Security
+- HMAC verify is constant-time.
+- Secret is sent in plaintext over the existing WebSocket (assumed WSS-terminated at the load balancer). Phase 5 will add per-command nonce + replay protection.
+- `auto_block` defaults to `false` — opt-in only.
+
+### Pitfalls hit (see `docs/PHASE4.md` for full list)
+- `from ..config` was wrong import path in `dispatcher.py`.
+- `Dispatcher(...)` defaults to module-level `registry` — tests must pass `registry=reg` explicitly.
+- Conftest `engine` fixture returns `AsyncEngine`, not session factory — tests must wrap with `async_sessionmaker`.
+- HMAC byte-stability requires `strconv.Itoa` for ints in Go, not `fmt.Sprintf` (could differ for negative numbers or width).
+
 ## [0.3.0] — 2026-08-28
 
 ### Added

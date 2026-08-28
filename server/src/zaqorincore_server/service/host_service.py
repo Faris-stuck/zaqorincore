@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..crypto import new_host_secret
 from ..logging import get_logger
 from ..models import Host
 
@@ -23,8 +24,17 @@ async def upsert_on_hello(
 ) -> Host:
     """Insert the host if missing, otherwise bump last_seen_at and
     last_version. Returns the (possibly newly created) Host row.
+
+    On first insert, generates a per-host `secret` used by the
+    dispatcher to HMAC-sign COMMAND frames. The agent bootstraps
+    this secret out-of-band (the WS handler sends it back in a
+    `X-Zaqorin-Secret` response header on the WebSocket upgrade).
     """
     now = datetime.now(timezone.utc)
+    # Build a single INSERT that fills `secret` on the new branch
+    # (NULL on conflict via DO NOTHING semantics) and bumps the
+    # existing row's last_seen_at/last_version.
+    new_secret = new_host_secret()
     stmt = (
         pg_insert(Host)
         .values(
@@ -32,6 +42,8 @@ async def upsert_on_hello(
             first_seen_at=now,
             last_seen_at=now,
             last_version=version,
+            secret=new_secret,
+            auto_block=False,
         )
         .on_conflict_do_update(
             index_elements=[Host.id],
@@ -50,6 +62,7 @@ async def upsert_on_hello(
         "host upserted",
         host_id=str(host.id),
         version=host.last_version,
+        secret_present=bool(host.secret),
     )
     return host
 

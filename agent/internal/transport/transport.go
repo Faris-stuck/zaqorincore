@@ -48,6 +48,18 @@ const (
 	FrameCommand FrameType = "command"
 )
 
+// Command is the public-facing shape of a server-issued command. The
+// internal `commandFrame` is wire-only; this is what the
+// CommandHandler receives.
+type Command struct {
+	ID       string
+	Kind     string
+	Target   string
+	TTLSec   int
+	IssuedAt string
+	HMAC     string
+}
+
 // helloFrame is the first message the client sends. The server uses
 // agent_id to look up the agent's shared secret and ACL.
 type helloFrame struct {
@@ -71,14 +83,26 @@ type byeFrame struct {
 	Reason string `json:"reason"`
 }
 
-// commandFrame is what the server may send us in later phases. Phase 1
-// parses it (so the JSON round-trips) but only logs it.
+// commandFrame is what the server may send us. Phase 4 verifies
+// the HMAC against the host's shared secret and dispatches the
+// action via a CommandHandler.
 type commandFrame struct {
+	Type     string `json:"type"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Target   string `json:"target"`
+	TTLSec   int    `json:"ttl_sec"`
+	IssuedAt string `json:"issued_at"`
+	HMAC     string `json:"hmac"`
+}
+
+// commandAckFrame is what the agent sends back to report the
+// outcome. The server updates the Action row to applied/failed.
+type commandAckFrame struct {
 	Type   string `json:"type"`
 	ID     string `json:"id"`
-	Kind   string `json:"kind"`
-	Target string `json:"target"`
-	TTLSec int    `json:"ttl_sec"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
 }
 
 // envelope is used only for inbound frames to peek at the "type"
@@ -94,7 +118,7 @@ type Config struct {
 	ServerURL string
 	// AgentID is the resolved, stable UUID for this host.
 	AgentID string
-	// AuthToken is sent as `Authorization: Bearer <token>` on the
+	// AuthToken is sent as `Authorization: Bearer *** on the
 	// upgrade request. Optional in Phase 1; the server may require
 	// it in Phase 6.
 	AuthToken string
@@ -108,6 +132,18 @@ type Config struct {
 	PongWait          time.Duration
 	// HandshakeTimeout caps the initial dial. Default 10s.
 	HandshakeTimeout time.Duration
+	// CommandHandler, if non-nil, is invoked for every verified
+	// command frame. The handler is responsible for verifying
+	// the HMAC and applying the action; this layer only does
+	// JSON parsing and ACK plumbing.
+	CommandHandler func(ctx context.Context, cmd Command) (status string, err error)
+}
+
+// SetCommandHandler replaces the command callback. Safe to call
+// before the client starts running; unsafe to call after Connect
+// without coordinating with the supervisor.
+func (c *Client) SetCommandHandler(h func(ctx context.Context, cmd Command) (string, error)) {
+	c.cfg.CommandHandler = h
 }
 
 // Client manages one logical WebSocket connection. Internally it
@@ -279,9 +315,29 @@ func (c *Client) sendBye(reason string) error {
 	return conn.WriteJSON(byeFrame{Type: string(FrameBye), Reason: reason})
 }
 
-// readPump consumes one frame at a time. Phase 1 only handles the
-// "command" frame by logging it; in Phase 4 we'll add HMAC verification
-// and an action dispatch table.
+// sendAck writes a command_ack frame. Used by the read pump after
+// the CommandHandler has run.
+func (c *Client) sendAck(id, status, errMsg string) error {
+	if status != "applied" && status != "failed" {
+		return fmt.Errorf("sendAck: invalid status %q", status)
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	conn := c.getConn()
+	if conn == nil {
+		return errors.New("no connection")
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	return conn.WriteJSON(commandAckFrame{
+		Type:   "command_ack",
+		ID:     id,
+		Status: status,
+		Error:  errMsg,
+	})
+}
+
+// readPump consumes one frame at a time. Phase 4 dispatches
+// "command" frames to cfg.CommandHandler and ACKs the server.
 func (c *Client) readPump() error {
 	conn := c.getConn()
 	if conn == nil {
@@ -311,12 +367,45 @@ func (c *Client) readPump() error {
 				c.cfg.Logger.Warn("transport: malformed command", slog.String("error", err.Error()))
 				continue
 			}
-			// Phase 1: log only. Phase 4 will verify HMAC + dispatch.
-			c.cfg.Logger.Info("transport: received command (Phase 1: ignored)",
+			if c.cfg.CommandHandler == nil {
+				c.cfg.Logger.Warn("transport: received command but no CommandHandler configured",
+					slog.String("id", cmd.ID), slog.String("kind", cmd.Kind))
+				continue
+			}
+			// Run the handler synchronously. The server is
+			// patient (it has the Action row to retry from),
+			// and we want the ACK to reflect the actual
+			// effect on the local system.
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			status, herr := c.cfg.CommandHandler(ctx, Command{
+				ID:       cmd.ID,
+				Kind:     cmd.Kind,
+				Target:   cmd.Target,
+				TTLSec:   cmd.TTLSec,
+				IssuedAt: cmd.IssuedAt,
+				HMAC:     cmd.HMAC,
+			})
+			cancel()
+			errMsg := ""
+			if herr != nil {
+				errMsg = herr.Error()
+				if status == "" {
+					status = "failed"
+				}
+			}
+			if ackErr := c.sendAck(cmd.ID, status, errMsg); ackErr != nil {
+				c.cfg.Logger.Warn("transport: command_ack send failed",
+					slog.String("id", cmd.ID),
+					slog.String("status", status),
+					slog.String("error", ackErr.Error()),
+				)
+			}
+			c.cfg.Logger.Info("transport: command processed",
 				slog.String("id", cmd.ID),
 				slog.String("kind", cmd.Kind),
 				slog.String("target", cmd.Target),
-				slog.Int("ttl_sec", cmd.TTLSec),
+				slog.String("status", status),
+				slog.String("error", errMsg),
 			)
 		case FrameHello, FrameEvent, FrameBye:
 			// Server should not send these; ignore.
