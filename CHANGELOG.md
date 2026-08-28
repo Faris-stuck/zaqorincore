@@ -17,17 +17,19 @@ the runtime code lands in the next three feature releases.
   — closes the largest detection gap: kernel-vouched signal
   for `execve`, `openat`, `connect`, `ptrace`, `setuid`. Un-
   tamperable by userspace attackers. Falls back to file-tail
-  on older kernels. **Target: v1.1.0.**
+  on older kernels. **Target: v1.1.0.** (Slice 1 scaffolding
+  ships; runtime deferred.)
 - **Multi-platform agents** ([ADR-007](docs/decisions/ADR-007-multi-platform-agents.md))
   — Windows Event Log + ETW (opt-in) and macOS Endpoint
   Security Framework. Same wire contract, same HMAC-signed
   auto-response. 5x build matrix (linux/amd64, linux/arm64,
   windows/amd64, darwin/amd64, darwin/arm64) already
-  compiles in v1.0.0. **Target: v1.2.0.**
+  compiles in v1.0.0. **Target: v1.2.0.** (Slice 1 scaffolding
+  ships; runtime deferred.)
 - **SOAR webhook delivery** ([ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md))
   — six backends ship (generic webhook, Slack, Discord,
   PagerDuty, TheHive, Jira) with dead-letter + replay.
-  Zero SaaS dependency. **Target: v1.3.0.**
+  Zero SaaS dependency. **Target: v1.3.0.** ✅ **Shipped.**
 
 ### Added (post-1.0.0 scaffolding)
 
@@ -95,14 +97,27 @@ the runtime code lands in the next three feature releases.
     helper instead of being silently lost
 
 ### Notes (post-v1.3.0 IMP work)
-- **229/229 server tests pass** (227 → +2 for IMP-3/4)
-- 10/10 Go packages pass (unchanged)
-- 9/9 launch smoke + 9/9 live smoke pass
-- **IMP-1 + IMP-2 remain open** for the v1.3.0 release tag:
-  - IMP-1: 5 SOAR API endpoints have no auth (needs
-    architecture decision: API key header vs session vs mTLS)
-  - IMP-2: auth header logging footgun (doc comment + ops
-    warning, not a code bug)
+- **235/235 server tests pass** (229 → +6 for IMP-1 auth tests)
+- 13/13 Go agent packages pass (was 10, +eBPF +telemetry/windows
+  +response/kinds tests)
+- 9/9 launch smoke pass
+- **Cybersec review items (Important): all closed**
+  - IMP-1: X-API-Key auth on `/api/v1/soar/*` (5 endpoints)
+    — `require_api_key` FastAPI dependency with constant-time
+    `hmac.compare_digest`. Opt-in via `ZAQORIN_API_KEY` env;
+    when unset the dependency is a no-op and a one-shot
+    warning is logged (operator-acknowledged dev mode).
+    Wildcard route covers deliveries, health, dead-letter
+    list / read, and replay — the dangerous one.
+  - IMP-2: httpx `debug=True` / auth header logging footgun —
+    audit of all 6 backends found no occurrence. Guardrail
+    note added to `docs/PHASE13-soar.md` (SUG-2) for any
+    future backend author.
+  - IMP-3: dead-letter file mode `0o600` via
+    `os.open(O_WRONLY|O_CREAT|O_TRUNC, 0o600)`.
+  - IMP-4: dropped-on-queue-full alerts now written to the
+    dead-letter store via `_dead_letter_queue_full` helper
+    instead of silently lost.
 - Cybersec review full output: see the Cybersec review
   section in the project's Obsidian vault note
   `Proyek - Cyber Sentinel ZaqorinCore.md`.
@@ -364,7 +379,8 @@ feature in the README is implemented, tested, and documented.
   unit, TOML config, `make build` for linux/amd64 + linux/arm64.
 - **End-to-end smoke** (`scripts/smoke.sh`).
 
-[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...v1.3.0
 [1.0.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.7.0...v0.8.0
