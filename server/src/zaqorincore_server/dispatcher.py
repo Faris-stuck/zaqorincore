@@ -31,6 +31,8 @@ from .logging import get_logger
 from .models.action import Action
 from .models.host import Host
 from .detectors import action_service
+from .action_kinds import is_valid_kind, get_kind, validate_target
+from .deployment import get_profile, validate_mode_action
 
 
 log = get_logger(__name__)
@@ -80,6 +82,54 @@ async def _build_command_frame(
     if not host.secret:
         log.error(
             "dispatcher: host has no secret, cannot sign",
+            host_id=str(host.id),
+        )
+        return None
+    # Phase 5: validate action kind before signing. Unknown kinds
+    # are dropped with a clear error (and an audit log row lands in
+    # the action_service for the operator to see).
+    if not is_valid_kind(action.kind):
+        log.error(
+            "dispatcher: unknown action kind, refusing to sign",
+            kind=action.kind,
+            action_id=str(action.id),
+        )
+        return None
+    # Phase 5: validate the target against the kind's expected shape.
+    # Malformed targets are dropped here rather than sent to the agent.
+    try:
+        validate_target(action.kind, action.target)
+    except ValueError as e:
+        log.error(
+            "dispatcher: malformed target for kind, refusing to sign",
+            kind=action.kind,
+            target=action.target,
+            error=str(e),
+            action_id=str(action.id),
+        )
+        return None
+    # Phase 5: enforce the deployment mode's allowed kinds. An action
+    # row created in startup mode cannot suddenly fire a kind that is
+    # only enabled in enterprise mode.
+    try:
+        validate_mode_action(settings.deployment_mode, action.kind)
+    except ValueError:
+        log.error(
+            "dispatcher: action kind not enabled in current deployment mode",
+            kind=action.kind,
+            mode=settings.deployment_mode,
+            action_id=str(action.id),
+        )
+        return None
+    # Phase 5: enforce the per-kind opt-in flag. block_ip, tarpit_ip,
+    # kill_process, isolate_host, etc. all require the host to have
+    # explicitly opted in. The action is dropped (not auto-fired) if
+    # the host has not opted in.
+    kind = get_kind(action.kind)
+    if kind.requires_host_opt_in and not host.auto_block:
+        log.warning(
+            "dispatcher: kind requires host opt-in, but host.auto_block is false",
+            kind=action.kind,
             host_id=str(host.id),
         )
         return None

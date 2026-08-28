@@ -30,6 +30,7 @@ import (
 
 	"github.com/Faris-stuck/zaqorincore/agent/internal/config"
 	"github.com/Faris-stuck/zaqorincore/agent/internal/crypto"
+	"github.com/Faris-stuck/zaqorincore/agent/internal/response/kinds"
 )
 
 // Handler applies verified COMMAND frames to the local system and
@@ -141,7 +142,87 @@ func (h *Handler) Handle(ctx context.Context, cmd Command) (string, error) {
 		if ttl <= 0 {
 			ttl = 3600
 		}
-		if err := blockIP(ctx, cmd.Target, ttl, h.cfg.DryRun, h.log); err != nil {
+		if err := kinds.BlockIP(ctx, cmd.Target, ttl, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "tarpit_ip":
+		ttl := cmd.TTLSec
+		if ttl <= 0 {
+			ttl = 1800
+		}
+		if err := kinds.TarpitIP(ctx, cmd.Target, ttl, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "canary_alert":
+		if err := kinds.CanaryAlert(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "isolate_host":
+		ttl := cmd.TTLSec
+		if ttl <= 0 {
+			ttl = 900
+		}
+		if err := kinds.IsolateHost(ctx, cmd.Target, ttl, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "kill_process":
+		if err := kinds.KillProcess(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "quarantine_file":
+		if err := kinds.QuarantineFile(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "revoke_session":
+		if err := kinds.RevokeSession(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "webhook_soar":
+		if err := kinds.WebhookSOAR(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log); err != nil {
+			return "failed", err
+		}
+		h.mu.Lock()
+		h.appliedAt[cmd.ID] = time.Now()
+		h.mu.Unlock()
+		return "applied", nil
+
+	case "evidence_capture":
+		if err := kinds.EvidenceCapture(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log); err != nil {
 			return "failed", err
 		}
 		h.mu.Lock()

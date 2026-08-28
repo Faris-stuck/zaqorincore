@@ -16,11 +16,19 @@ Adding a new detector:
 
 from __future__ import annotations
 
+from .auth_anomaly import DETECTOR as _auth_anomaly
 from .base import Detector
+from .dns_tunnel import DETECTOR as _dns_tunnel
+from .port_scan import DETECTOR as _port_scan
 from .ssh_bruteforce import DETECTOR as _ssh_bruteforce
+from .web_attack import DETECTOR as _web_attack
 
 BUILTIN_DETECTORS: list[Detector] = [
     _ssh_bruteforce,
+    _port_scan,
+    _web_attack,
+    _dns_tunnel,
+    _auth_anomaly,
 ]
 
 

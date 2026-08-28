@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # query stays O(pending) regardless of total actions.
     dispatcher_poll_sec: float = Field(default=5.0, ge=0.1, le=60.0)
 
+    # --- Deployment mode (Phase 5, ADR-002) ---
+    # Selects the tiered config profile: individual | startup | enterprise.
+    # Default is "startup" — the most common deployment. Individual is
+    # for homelab users; enterprise is for multi-node clusters.
+    deployment_mode: str = "startup"
+
 
 _settings: Settings | None = None
 

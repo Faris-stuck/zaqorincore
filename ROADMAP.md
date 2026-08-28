@@ -247,6 +247,190 @@ auto-response.
 
 ---
 
+## Phase 5 — Universal platform scope (multi-scale + 9 actions + detector library) ✅
+
+**Goal:** turn ZaqorinCore from a single-host IDS into a **universal
+cyber security platform** that scales from a Raspberry Pi 4 homelab
+install to a multi-tenant MSSP deployment. Same code, runtime mode
+flag selects the deployment scale.
+
+**Status:** shipped as v0.5.0. ADRs in `docs/decisions/` capture the
+scope, the tiered config, the action kinds, the rule engine, and the
+deception strategy. One binary, three modes (`individual` /
+`startup` / `enterprise`), nine action kinds, five detectors
+(ssh_bruteforce + 4 new: port_scan, web_attack, dns_tunnel,
+auth_anomaly), 145/145 tests pass.
+
+**Deliverables:**
+
+- [x] **Multi-scale deployment** (`server/deployment.py`): one
+  binary, three modes via `ZAQORIN_DEPLOYMENT_MODE`. Each mode
+  declares the default DB / Redis / pool / detector set so an
+  operator on a 1 GB Pi gets sensible defaults without reading a
+  thousand-line config.
+- [x] **Nine action kinds** (`server/action_kinds.py`,
+  `agent/internal/response/kinds/`). The dispatcher validates
+  every action against the per-kind policy; the agent executors
+  apply them.
+- [x] **Four new detectors** in addition to `ssh_bruteforce`:
+  `port_scan`, `web_attack`, `dns_tunnel`, `auth_anomaly`.
+- [x] **Five ADRs** in `docs/decisions/`.
+- [x] **Tests**: 118/118 server, 27/27 Go agent. E2E smoke
+  unchanged (SSH brute force still closes the loop in <2s).
+
+**Architecture:**
+
+- `server/deployment.py` — `INDIVIDUAL` / `STARTUP` / `ENTERPRISE`
+  presets, `apply_mode_to_settings(settings, mode)` mutates the
+  settings in place.
+- `server/action_kinds.py` — frozen registry of 9 kinds, each with
+  target shape, default TTL, opt-in flag, allow-by-default policy.
+- `server/dispatcher.py` — added per-kind validation before
+  signing a command. Unknown kinds are rejected.
+- `agent/internal/response/kinds/kinds.go` — uniform
+  `(ctx, target, ttl, dryRun, log)` signature for all 9
+  executors. Format gates (CIDR, PID>1, scheme check).
+
+**Done when:** an operator on a Raspberry Pi 4 with no DB can run
+`zaqorin-server --mode individual` and the server starts, applies
+defaults, and the same binary works on a 100-host enterprise
+deployment with `ZAQORIN_DEPLOYMENT_MODE=enterprise`. **Yes.**
+
+---
+
+## Phase 6 — Sigma-compatible rule engine + hunt query ⏳
+
+**Goal:** stop hand-coding each detector. Operators write Sigma-style
+YAML rules; the engine parses them and runs them against the event
+stream. The built-in detectors become a starter pack of rules.
+
+**Planned approach:**
+
+- Parse Sigma rules in YAML — the same syntax used by SigmaHQ
+  (MIT) and converted to Splunk/Elastic by `sigmac`. We don't
+  depend on SigmaHQ; we just adopt the wire format.
+- `server/rule_engine/` — `parse_rule(yaml) -> CompiledRule`,
+  `CompiledRule.matches(event) -> bool`, `RuleRegistry` that the
+  runner consults in addition to the Python detector plugins.
+- Phase-5 detectors (`port_scan`, `web_attack`, etc.) become
+  Sigma rules loaded from `rules/builtin/*.yml` at startup, with
+  the Python helpers (`port_knock`, `is_http_event`, etc.)
+  exposed as Sigma `match` functions if a rule needs them.
+- **Hunt query**: an operator can save a Sigma rule as a "hunt"
+  and the engine runs it on demand against historical events
+  stored in the DB.
+- **Backwards compatible**: existing detector plugins keep
+  working. New rules are an additive path.
+
+**Done when:** an operator drops a Sigma rule YAML into
+`rules/custom/`, restarts the server, and sees alerts from it
+without writing any Python.
+
+---
+
+## Phase 7 — Deception + forensics ⏳
+
+**Goal:** close the proactive gap. ZaqorinCore plants canary
+tokens, tarpits scanners, captures evidence, and builds a
+chain-of-custody record for every alert.
+
+**Planned approach:**
+
+- **Canary tokens** (`canary_alert` action kind + a daemon that
+  watches `~/.ssh/authorized_keys`, `/var/log/auth.log`, etc.).
+  Any touch fires an alert with zero false positive risk.
+- **Tarpit** (`tarpit_ip` action kind already exists; the agent
+  executes it via `nft` rate-limit + Go net throttle).
+- **Breadcrumbs**: `agent/` watches for access to known
+  canary paths (`/etc/canary.passwd`, `~/.aws/canary`) and
+  emits events the detector engine picks up.
+- **Evidence locker** (`evidence_capture` action kind). On
+  alert, agent snapshots the relevant files, tar+hashes them,
+  and POSTs to the server. Server stores in
+  `evidence/{alert_id}.tar.gz` with a `chain_of_custody.json`
+  sidecar (sha256 of original → sha256 of tar → operator name
+  → timestamp).
+
+**Done when:** planting a canary token in `/tmp/canary.docx` and
+opening it fires a `canary_alert` within 5 seconds with the
+operator's username and timestamp.
+
+---
+
+## Phase 8 — Compliance pack (UU PDP, ISO 27001, PCI DSS) ⏳
+
+**Goal:** out-of-the-box rules that map common controls
+to specific event patterns. Operators in regulated industries
+get a one-step install.
+
+**Planned approach:**
+
+- `rules/compliance/uupdp.yml` — Indonesia's UU PDP
+  (Personal Data Protection). 13+ rules covering "data access
+  by unauthorized user," "export of personal data outside
+  perimeter," etc.
+- `rules/compliance/iso27001.yml` — A.8 asset management,
+  A.9 access control, A.12 operations security, A.16 incident
+  management.
+- `rules/compliance/pci_dss.yml` — Requirement 10 (logging),
+  Requirement 11 (testing), Requirement 12 (security policy).
+- A `GET /api/v1/compliance/{framework}/status` endpoint that
+  reports per-control coverage: which rules fired, which
+  didn't, which need tuning.
+
+**Done when:** an Indonesian fintech operator runs
+`zaqorin-server --compliance uupdp` and the server reports
+"13/13 controls covered, 2 controls need attention."
+
+---
+
+## Phase 9 — Web UI (React) ⏳
+
+**Goal:** a real operator UI — alerts, hunt, evidence, settings,
+compliance dashboard. Replaces the placeholder `GET /api/v1/alerts`
+JSON-only view.
+
+**Planned approach:**
+
+- React + TypeScript + Vite, no Redux (React Query for data).
+- Pages: `Alerts` (paginated, filter by detector / host /
+  severity / time), `Hosts` (list, per-host detail with
+  per-host `auto_block` toggle), `Hunt` (write Sigma rules,
+  run on demand, see results), `Evidence` (per-alert file
+  viewer), `Compliance` (per-framework coverage),
+  `Settings` (deployment mode, key rotation, SOAR webhook).
+- Built and bundled into the same release artifact. No
+  separate deploy step.
+- Auth: API key header (same as `zaqorin`) — no login screen
+  for v0. Operators put it behind their reverse proxy with
+  basic auth or Cloudflare Access.
+
+**Done when:** an operator opens the UI in a browser, sees
+the last 24h of alerts, drills into one, sees the evidence
+locker files, and toggles `auto_block` on a host.
+
+---
+
+## Phase 10 — Production launch ⏳
+
+**Goal:** announce the project to the world. The platform is
+production-ready for individual, startup, and enterprise use.
+
+**Planned approach:**
+
+- Dedicated docs site (this repo's `docs/` rendered via MkDocs
+  + GitHub Pages).
+- Demo video (<5 min) showing the full loop: trigger → detect
+  → action → evidence.
+- Post to HN, r/selfhosted, r/sysadmin, Lobsters, applicable
+  Discords.
+- First "stable" release tag `v1.0.0`.
+
+**Done when:** GitHub repo shows organic stars / forks /
+issues from people who are not the maintainer.
+
+---
+
 ## Non-goals (for now)
 
 - Cloud-managed SaaS tier

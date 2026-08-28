@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-28
+
+### Scope expansion (ADR-001)
+ZaqorinCore is now a **universal cyber security platform**, not just a
+host-based IDS. The platform covers the full spectrum (network, web,
+auth, file, process, lateral, exfil, vuln, compliance) and is
+proactive (hunt, deception, forensics). One binary, runtime-mode flag
+selects the deployment scale (individual / startup / enterprise).
+Three ADRs in `docs/decisions/` capture the scope, the tiered config,
+and the rule engine.
+
+### Added
+
+- **Multi-scale deployment** (`server/deployment.py`, ADR-002). The
+  server now boots in one of three modes set by `ZAQORIN_DEPLOYMENT_MODE`:
+  - `individual` — single host, embedded defaults, no external DB
+    needed. Suited for a Raspberry Pi 4 / homelab install.
+  - `startup` — small team, single server, PostgreSQL + Redis, 12
+    detectors enabled.
+  - `enterprise` — multi-cloud, Redis Streams, 25+ detectors, SOAR
+    webhook, horizontal scaling.
+
+- **Nine action kinds** (`server/action_kinds.py`,
+  `agent/internal/response/kinds/`, ADR-003). The dispatcher
+  validates every action against a per-kind policy (target shape,
+  TTL, opt-in flag). Agent executors cover all 9: `block_ip`,
+  `tarpit_ip`, `canary_alert`, `isolate_host`, `kill_process`,
+  `quarantine_file`, `revoke_session`, `webhook_soar`,
+  `evidence_capture`. Each has dry-run support and a format gate
+  (CIDR for `block_ip`, PID>1 for `kill_process`, etc.).
+  18/18 Go unit tests cover format gates and dry-run paths.
+
+- **Four new detectors** (`server/detectors/port_scan.py`,
+  `web_attack.py`, `dns_tunnel.py`, `auth_anomaly.py`):
+  - `port_scan` — sliding window on distinct destination ports per
+    source IP, tarpits on threshold.
+  - `web_attack` — regex sweep over HTTP request lines (SQLi, XSS,
+    path traversal, scanner fingerprint). Cooldown per (host, ip, tag).
+  - `dns_tunnel` — long leftmost label + high query rate signals
+    DNS-based exfiltration. Default threshold 40 chars × 50 queries
+    in 60s.
+  - `auth_anomaly` — first-time IP for a user, plus multiple
+    distinct IPs in a 5-minute window. Triggers a `revoke_session`
+    action on the high-severity branch.
+  All four wire into `BUILTIN_DETECTORS` automatically; no DB
+  migration. 25 unit tests cover helpers and shape detection.
+
+- **Dispatcher kind-validation** (`server/dispatcher.py`): per-kind
+  opt-in flag, target-shape validation via `action_kinds.KINDS`,
+  rejection of unknown kinds. Defends against a hostile or buggy
+  detector writing a kind the agent doesn't know.
+
+- **ADRs** in `docs/decisions/`:
+  - `ADR-001-scope-universal-platform.md`
+  - `ADR-002-multi-scale-tiered-config.md`
+  - `ADR-003-action-kinds-nine-kinds.md`
+  - `ADR-004-rule-engine-sigma-compatible.md` (planned for Phase 6)
+  - `ADR-005-deception-forensics-zerocost.md` (planned for Phase 7)
+
+### Tests
+- Server: 55 → 118 tests (was 55, +63: 17 action_kinds, 6
+  deployment, 20 new_detectors helpers, 20 dispatcher kind-gate
+  cases).
+- Agent: 9 → 27 tests (was 9, +18 kinds executors).
+- E2E smoke unchanged: SSH brute force still closes the loop in
+  <2s.
+
+### Wire contract additions
+- `target_shape` field in `KINDS` registry (server-only, not on
+  the wire). The dispatcher consults it before signing a command.
+- Agent executors all accept `(ctx, target string, ttl int, dryRun
+  bool, log)` uniformly.
+
+### Security
+- Target-shape gate in the dispatcher rejects malformed targets
+  before they reach the agent. No more naked-user-input on the
+  wire.
+- PID 1 protection on `kill_process` — the executor refuses to
+  touch init even with the host's secret.
+- `webhook_soar` executor requires `http://` or `https://`; rejects
+  `ftp://`, `file://`, etc.
+
+### Backwards compatibility
+- Existing detectors and actions work unchanged. The new
+  `action_kinds.KINDS` registry is the single source of truth for
+  valid kinds; the dispatcher consults it but does not require
+  detectors to populate it.
+- Existing agents automatically understand all 9 kinds; old agents
+  will fail to apply a kind they don't know (graceful error path).
+
 ## [0.4.0] — 2026-08-28
 
 ### Added
