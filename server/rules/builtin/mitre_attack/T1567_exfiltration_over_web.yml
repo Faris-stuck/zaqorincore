@@ -1,0 +1,24 @@
+title: Large outbound upload to non-allowlisted host
+id: 4803bcd6-9be2-4d04-bf09-8be1e6736b58
+description: Detects HTTPS/HTTP uploads over 100MB to destinations outside the corporate allowlist.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1567/
+  - https://attack.mitre.org/techniques/T1567/002/
+tags:
+  - attack.t1567
+  - attack.exfiltration
+  - nist_csf.DE.AE
+level: high
+detection:
+  selection:
+    event_type: "http_outbound"
+    method: "POST"
+    bytes_out: ">104857600"
+  filter_allowlist:
+    destination_host: 're:(?i)\.(corp|internal|intranet)\.'
+  condition: selection and not filter_allowlist
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{destination_ip}}"

@@ -102,10 +102,42 @@ class EvidenceRecord(BaseModel):
 
 @dataclass
 class EvidenceStore:
-    """Disk-backed evidence locker."""
+    """Disk-backed evidence locker with key rotation support.
+
+    Keys are looked up by id. The default key has id "current".
+    When operators rotate the signing key, the old one is kept
+    in the keys dict under its old id, and verify() tries each
+    one until one matches (or all fail). Sidecar JSON embeds
+    the key id so a future verifier knows which key signed it.
+    """
 
     base_dir: Path
     signing_key: bytes = field(default_factory=lambda: secrets.token_bytes(32))
+    # Map of key_id -> bytes. The default key is always under "current".
+    keys: dict[str, bytes] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.keys:
+            self.keys = {"current": self.signing_key}
+        else:
+            # If a caller passed `signing_key=...` but no `keys`,
+            # make sure "current" maps to it.
+            self.keys.setdefault("current", self.signing_key)
+
+    def rotate(self, new_key: bytes | None = None) -> str:
+        """Rotate the active signing key. The old key stays in
+        the rotation history under its prior id. Returns the new
+        key id (a uuid4 string).
+        """
+        import uuid as _uuid
+        new_id = _uuid.uuid4().hex
+        if new_key is None:
+            new_key = secrets.token_bytes(32)
+        # Find the current "current" key and demote it.
+        old = self.keys.get("current", self.signing_key)
+        self.keys = {new_id: new_key, "previous": old, "current": new_key}
+        self.signing_key = new_key
+        return new_id
 
     def _alert_dir(self, alert_id: str) -> Path:
         return self.base_dir / alert_id
@@ -128,6 +160,10 @@ class EvidenceStore:
         out_dir.mkdir(parents=True, exist_ok=True)
         bundle_path = out_dir / "bundle.tar.gz"
         bundle_path.write_bytes(tarball)
+        # Key id embeds which key signed this evidence. Operators
+        # can verify a key id by calling verify(alert_id, key_id).
+        key_id = "current"
+        key = self.keys[key_id]
         sidecar = {
             "alert_id": payload.alert_id,
             "host_id": payload.host_id,
@@ -135,9 +171,10 @@ class EvidenceStore:
             "captured_by": payload.captured_by,
             "bundle_sha256": payload.bundle_sha256,
             "source_hashes": payload.source_hashes,
+            "key_id": key_id,
         }
         sidecar_bytes = json.dumps(sidecar, sort_keys=True, indent=2).encode("utf-8")
-        sig = hmac.new(self.signing_key, sidecar_bytes, hashlib.sha256).hexdigest()
+        sig = hmac.new(key, sidecar_bytes, hashlib.sha256).hexdigest()
         sidecar_path = out_dir / "bundle.coc.json"
         sidecar_path.write_bytes(sidecar_bytes)
         (out_dir / "bundle.coc.sig").write_text(sig)
@@ -155,8 +192,8 @@ class EvidenceStore:
 
     def verify(self, alert_id: str) -> bool:
         """Return True if the sidecar signature still matches the
-        sidecar bytes. Used by the audit endpoint and tests to
-        detect tampering.
+        sidecar bytes under any key in the rotation history.
+        Used by the audit endpoint and tests to detect tampering.
         """
         out_dir = self._alert_dir(alert_id)
         sidecar_path = out_dir / "bundle.coc.json"
@@ -165,10 +202,27 @@ class EvidenceStore:
             return False
         sidecar_bytes = sidecar_path.read_bytes()
         sig = sig_path.read_text()
-        return hmac.compare_digest(
-            hmac.new(self.signing_key, sidecar_bytes, hashlib.sha256).hexdigest(),
-            sig,
-        )
+        # Try the key the sidecar was signed with first, then
+        # fall through to the rotation history.
+        try:
+            sidecar = json.loads(sidecar_bytes)
+            key_id = sidecar.get("key_id", "current")
+            if key_id in self.keys:
+                if hmac.compare_digest(
+                    hmac.new(self.keys[key_id], sidecar_bytes, hashlib.sha256).hexdigest(),
+                    sig,
+                ):
+                    return True
+        except (json.JSONDecodeError, KeyError):
+            pass
+        # Fall back: try every key.
+        for key in self.keys.values():
+            if hmac.compare_digest(
+                hmac.new(key, sidecar_bytes, hashlib.sha256).hexdigest(),
+                sig,
+            ):
+                return True
+        return False
 
 
 __all__ = [

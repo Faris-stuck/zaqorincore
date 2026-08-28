@@ -1,11 +1,28 @@
-title: DNS tunneling (50 long queries in 5m)
+title: DNS tunneling (10+ long TXT queries in 60s)
 id: builtin-dns-tunnel
 level: high
+description: |
+  Detects DNS queries to a single domain whose qname length is
+  abnormal. Classic indicator of iodine/dnscat2-style data
+  exfiltration over DNS TXT records.
+tags:
+  - attack.t1071.004   # MITRE ATT&CK Application Layer Protocol: DNS
+  - attack.t1048       # MITRE ATT&CK Exfiltration Over C2 Channel
+  - compliance.iso27001.A5.10
+references:
+  - https://attack.mitre.org/techniques/T1071/004/
+  - https://attack.mitre.org/techniques/T1048/
 detection:
   selection:
     event_type: "dns_query"
   condition: selection
-  timeframe: 5m
-  count: 50
-cooldown_sec: 1800
+  timeframe: 60s
+  count: 10
+  filter:
+    qname_len_gte: 50
+action:
+  kind: block_ip
+  target: "{{source_ip}}"
+  ttl_sec: 1800
+cooldown_sec: 600
 dedup_key: "{{source_ip}}"

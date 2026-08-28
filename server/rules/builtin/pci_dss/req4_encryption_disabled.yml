@@ -1,0 +1,23 @@
+title: TLS negotiation failure (PCI DSS 4.2.1)
+id: b632dc05-1342-4e24-a2c6-2254247387ae
+description: Detects failed TLS handshakes or handshakes that negotiate a weak
+  cipher. PCI DSS 4.0 requirement 4.2.1 requires strong cryptography for
+  cardholder data transmission.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1573
+  - pci_dss.4.2.1
+level: high
+detection:
+  selection:
+    event_type: tls_handshake
+    status: failed
+  condition: selection
+  timeframe: 10m
+  count: 3
+cooldown_sec: 600
+dedup_key: "{{source_ip}}"

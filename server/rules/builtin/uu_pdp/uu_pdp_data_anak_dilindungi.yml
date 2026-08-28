@@ -1,0 +1,25 @@
+title: Akses data pribadi anak di bawah umur (Pasal 25-26 UU PDP)
+id: builtin-uu-pdp-data-anak-dilindungi
+description: >
+  Mendeteksi akses terhadap record data pribadi yang ditandai
+  sebagai milik anak di bawah umur, khususnya akses oleh pengguna
+  yang tidak berwenang. Pasal 25 dan 26 UU PDP mengatur
+  perlindungan khusus terhadap data pribadi anak.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.25
+  - pasal.26
+  - data_anak
+level: critical
+detection:
+  selection:
+    event_type: "data_access"
+    record_flag: "minor"
+  condition: selection
+cooldown_sec: 3600
+dedup_key: "{{user}}:{{user_id}}"

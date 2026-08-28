@@ -1,0 +1,28 @@
+title: Syslog forwarding broken
+id: 5d9ebea7-6f64-49ea-89cc-a50c981f480e
+description: >
+  Detects when a host's syslog or audit log forwarder stops sending,
+  fails its heartbeat, or reports a broken transport. A silent log
+  pipeline breaks detection coverage and violates the logging policy.
+  Maps to ISO 27001:2022 A.8.15 (logging) and NIST SP 800-53 AU-3
+  (content of audit records).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.8.15
+  - nist80053.AU-3
+  - attack.defense_evasion
+  - attack.t1562
+level: high
+detection:
+  selection:
+    event_type: "log_forwarder"
+    status: "broken"
+  condition: selection
+  timeframe: 15m
+cooldown_sec: 3600
+dedup_key: "{{host_id}}"

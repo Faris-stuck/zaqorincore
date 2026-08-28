@@ -1,11 +1,24 @@
-title: Port scan (20 distinct ports in 30s)
+title: Port scan (20 distinct destination ports in 30s)
 id: builtin-port-scan
 level: medium
+description: |
+  Detects a single source IP probing 20 or more distinct destination
+  ports within 30 seconds. The signature of Nmap -sS or Masscan.
+tags:
+  - attack.t1046   # MITRE ATT&CK Network Service Discovery
+  - compliance.iso27001.A5.7
+references:
+  - https://attack.mitre.org/techniques/T1046/
 detection:
   selection:
-    event_type: "network_tcp"
+    event_type: "network_connection"
   condition: selection
   timeframe: 30s
   count: 20
-cooldown_sec: 600
+  distinct: destination_port
+action:
+  kind: tarpit_ip
+  target: "{{source_ip}}"
+  ttl_sec: 600
+cooldown_sec: 300
 dedup_key: "{{source_ip}}"

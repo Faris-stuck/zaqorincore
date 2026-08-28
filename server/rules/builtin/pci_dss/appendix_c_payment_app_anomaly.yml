@@ -1,0 +1,24 @@
+title: Payment service restart outside maintenance window (PCI DSS Appendix C)
+id: 352d2e92-0456-40fe-8638-187e089eb8ba
+description: Detects restart or crash of a payment application outside the
+  approved maintenance window. PCI DSS v4.0 Appendix C requires payment
+  applications to log and protect against unauthorized restarts.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1529
+  - pci_dss.appendix_c
+level: high
+detection:
+  selection:
+    event_type: process_restart
+    process|contains: payment
+    within_maintenance_window: false
+  condition: selection
+  timeframe: 10m
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{process}}"

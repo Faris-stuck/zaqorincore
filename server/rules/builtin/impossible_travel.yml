@@ -1,6 +1,17 @@
 title: Impossible travel (login from 3+ distinct IPs in 5m)
 id: builtin-impossible-travel
 level: critical
+description: |
+  Detects the same user authenticating from three or more distinct
+  source IPs within a five-minute window. Physically impossible at
+  normal travel speeds, so this signals account compromise or
+  credential sharing.
+tags:
+  - attack.t1078   # MITRE ATT&CK Valid Accounts
+  - compliance.iso27001.A5.16
+references:
+  - https://attack.mitre.org/techniques/T1078/
+  - https://www.iso.org/standard/27001
 detection:
   selection:
     event_type: "auth_login"

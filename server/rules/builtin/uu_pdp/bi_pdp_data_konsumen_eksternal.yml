@@ -1,0 +1,24 @@
+title: Data keuangan konsumen keluar perimeter (Regulasi BI)
+id: builtin-uu-pdp-bi-data-konsumen-eksternal
+description: >
+  Mendeteksi upaya pengeluaran data keuangan konsumen melewati
+  perimeter organisasi (misalnya upload ke layanan cloud publik atau
+  transfer eksternal) tanpa otorisasi. Regulasi Bank Indonesia
+  terkait pelindungan data konsumen sektor keuangan.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.bi.go.id/id/peraturan/Pages/PBI_022320.aspx
+tags:
+  - compliance.uu_pdp
+  - bi.regulasi
+  - data_konsumen
+level: critical
+detection:
+  selection:
+    event_type: "data_egress"
+    data_class: "financial"
+  condition: selection
+cooldown_sec: 1800
+dedup_key: "{{user}}"

@@ -1,0 +1,24 @@
+title: Pembagian data nasabah ke pihak ketiga tanpa kontrak (POJK 13/2020)
+id: builtin-uu-pdp-pojk13-data-nasabah-eksternal
+description: >
+  Mendeteksi pembagian data pribadi nasabah ke pihak ketiga tanpa
+  penanda kontrak atau kerja sama yang sah. POJK No. 13/POJK.02/2020
+  mengatur perlindungan data dan informasi nasabah di industri
+  jasa keuangan.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.ojk.go.id/id/regulasi/Pages/Surat-Edaran-Otoritas-Jasa-Keuangan-Nomor-13-SEOJK-07-2020.aspx
+tags:
+  - compliance.uu_pdp
+  - pojk.13_2020
+  - pembagian_data_nasabah
+level: high
+detection:
+  selection:
+    event_type: "data_share"
+    contract_id: 're:^$|null|undefined'
+  condition: selection
+cooldown_sec: 3600
+dedup_key: "{{recipient}}"

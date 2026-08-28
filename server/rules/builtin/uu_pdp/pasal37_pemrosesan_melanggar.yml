@@ -1,0 +1,24 @@
+title: Pemrosesan data di luar tujuan yang dinyatakan (Pasal 37 UU PDP)
+id: builtin-uu-pdp-pasal37-pemrosesan-melanggar
+description: >
+  Mendeteksi aktivitas pemrosesan data pribadi yang tidak sesuai
+  dengan tujuan yang telah disampaikan kepada pemilik data. Pasal 37
+  UU PDP melarang penggunaan data di luar tujuan yang telah
+  disetujui pemilik data.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.37
+  - pemrosesan_di_luar_tujuan
+level: high
+detection:
+  selection:
+    event_type: "data_process"
+    purpose_mismatch: true
+  condition: selection
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{resource}}"

@@ -1,6 +1,16 @@
 title: SSH brute force (5 failed logins in 60s)
 id: builtin-ssh-bruteforce
 level: high
+description: |
+  Detects a burst of failed SSH authentication attempts from a single
+  source IP within 60 seconds. A real brute-force sweep typically tries
+  many accounts in seconds; legitimate users occasionally fail once.
+tags:
+  - attack.t1110   # MITRE ATT&CK Brute Force
+  - compliance.iso27001.A5.16
+references:
+  - https://attack.mitre.org/techniques/T1110/
+  - https://www.iso.org/standard/27001
 detection:
   selection:
     source: "sshd"

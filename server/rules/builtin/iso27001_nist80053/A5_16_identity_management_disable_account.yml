@@ -1,0 +1,26 @@
+title: Authentication attempt for disabled or deleted account
+id: 7ac57e43-cdef-42a3-8600-f53df9872a54
+description: >
+  Detects a login where the target account is marked disabled, deleted,
+  or locked. The account lifecycle should have stopped these sessions.
+  Maps to ISO 27001:2022 A.5.16 (identity management) and NIST SP
+  800-53 AC-2(2) (account management).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.16
+  - nist80053.AC-2(2)
+  - attack.persistence
+level: high
+detection:
+  selection:
+    event_type: "auth_login"
+    account_state: "disabled"
+  condition: selection
+  timeframe: 5m
+cooldown_sec: 1800
+dedup_key: "{{user}}"

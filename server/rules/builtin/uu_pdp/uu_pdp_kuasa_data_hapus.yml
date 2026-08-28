@@ -1,0 +1,25 @@
+title: Permintaan hapus data (hak untuk dilupakan) diabaikan (Pasal 16 UU PDP)
+id: builtin-uu-pdp-kuasa-data-hapus
+description: >
+  Mendeteksi permintaan penghapusan atau penarikan persetujuan dari
+  pemilik data yang diabaikan atau ditolak tanpa dasar yang sah.
+  Pasal 16 UU PDP memberikan hak kepada pemilik data untuk
+  menghapus dan menarik kembali persetujuan.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.16
+  - hak_hapus_data
+level: critical
+detection:
+  selection:
+    event_type: "consent_withdraw"
+    status: "rejected"
+    reason: 're:^(none|null|undefined)$'
+  condition: selection
+cooldown_sec: 7200
+dedup_key: "{{user_id}}"

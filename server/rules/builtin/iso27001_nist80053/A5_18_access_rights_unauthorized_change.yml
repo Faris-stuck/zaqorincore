@@ -1,0 +1,26 @@
+title: Sensitive file made world-writable
+id: 1ef7ea1b-96c1-4554-9013-51c412740fac
+description: >
+  Detects chmod 777 or equivalent world-writable permission changes.
+  World-writable sensitive files let any local user modify binaries,
+  configs, or credentials. Maps to ISO 27001:2022 A.5.18 (access
+  rights) and NIST SP 800-53 AC-3 (access enforcement).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.18
+  - nist80053.AC-3
+  - attack.privilege_escalation
+level: high
+detection:
+  selection:
+    event_type: "process_exec"
+    command: 're:chmod\s+(-R\s+)?(777|a\+rwx|o\+w)'
+  condition: selection
+  timeframe: 10m
+cooldown_sec: 1800
+dedup_key: "{{user}}"

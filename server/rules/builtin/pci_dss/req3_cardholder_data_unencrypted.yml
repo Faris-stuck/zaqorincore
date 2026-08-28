@@ -1,0 +1,23 @@
+title: Access to cleartext cardholder data field (PCI DSS 3.5.1)
+id: c8ae9207-9367-4800-a3a7-31cc16c037e5
+description: Detects reads or queries against a cleartext Primary Account Number
+  field. PCI DSS 4.0 requirement 3.5.1 requires PAN to be rendered unreadable
+  wherever stored.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1213
+  - pci_dss.3.5.1
+level: critical
+detection:
+  selection:
+    event_type: data_access
+    field|contains: pan_cleartext
+  condition: selection
+  timeframe: 5m
+  count: 1
+cooldown_sec: 600
+dedup_key: "{{user}}"

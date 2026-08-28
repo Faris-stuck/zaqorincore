@@ -1,0 +1,25 @@
+title: Concurrent sessions for one user from 2+ IPs (PCI DSS 8.2.1)
+id: 49d707dd-8ff3-49ff-b53a-4633b17ca2bd
+description: Detects a single user account authenticating from two or more
+  distinct source IPs. PCI DSS 4.0 requirement 8.2.1 requires unique user
+  identification so access is traceable.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1078
+  - pci_dss.8.2.1
+level: high
+detection:
+  selection:
+    event_type: auth_login
+    status: success
+  condition: selection
+  timeframe: 5m
+  count: 2
+  group_by: user
+  distinct_source_ip: true
+cooldown_sec: 1800
+dedup_key: "{{user}}"

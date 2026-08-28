@@ -1,0 +1,23 @@
+title: Audit daemon stopped or disabled (PCI DSS 10.2.1)
+id: 89815328-1df0-4fde-be0c-335b4e355d42
+description: Detects when the system audit daemon (auditd, syslog-ng, rsyslog)
+  is stopped or disabled. PCI DSS 4.0 requirement 10.2.1 requires audit logs
+  to be enabled for all system components.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1562.012
+  - pci_dss.10.2.1
+level: critical
+detection:
+  selection:
+    event_type: process_stop
+    process|re: '^(auditd|syslog-ng|rsyslogd)$'
+  condition: selection
+  timeframe: 5m
+  count: 1
+cooldown_sec: 600
+dedup_key: "{{hostname}}"

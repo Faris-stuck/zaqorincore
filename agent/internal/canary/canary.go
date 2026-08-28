@@ -100,6 +100,25 @@ func (w *Watcher) Add(ctx context.Context, desc Descriptor) error {
 			cancel()
 			return fmt.Errorf("watch tcp: %w", err)
 		}
+	case "http_endpoint":
+		// HTTP canaries are just TCP listeners on the configured
+		// port. The agent doesn't run a full HTTP server — we
+		// treat any inbound connection as a touch, since legitimate
+		// clients should never hit a canary port.
+		if err := w.watchTCP(cctx, e); err != nil {
+			cancel()
+			return fmt.Errorf("watch http: %w", err)
+		}
+	case "credential":
+		// Credential canaries are entries planted in a watched
+		// file (e.g. /etc/shadow, ~/.aws/credentials). The agent
+		// fsnotify-watches the file and any read of the canary
+		// line fires a touch. Path is the file; Secret is the
+		// planted token string.
+		if err := w.watchFile(cctx, e); err != nil {
+			cancel()
+			return fmt.Errorf("watch credential: %w", err)
+		}
 	default:
 		cancel()
 		return fmt.Errorf("unsupported canary kind: %s", desc.Kind)

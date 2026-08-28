@@ -1,0 +1,22 @@
+title: Rapid file rename with extension change (ransomware behavior)
+id: e00a8e1c-d5b7-413b-b9c4-36d772f57e7f
+description: Detects bursts of file rename/write events where the new extension is not the original.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1486/
+tags:
+  - attack.t1486
+  - attack.impact
+  - nist_csf.RS.RP
+level: critical
+detection:
+  selection:
+    event_type: "file_rename"
+    new_extension: 're:(?i)(locked|crypt|enc|wncry|locky|cerber|zepto)'
+  condition: selection
+  timeframe: 2m
+  count: 20
+cooldown_sec: 900
+dedup_key: "{{user}}:{{hostname}}"

@@ -1,0 +1,24 @@
+title: Ekspor massal data pribadi di luar jam kerja (Pasal 41 UU PDP)
+id: builtin-uu-pdp-pasal41-notifikasi-breach
+description: >
+  Mendeteksi ekspor atau unduh massal data pribadi pada jam tidak
+  wajar (malam/pagi) yang mengindikasikan kebocoran. Pasal 41 UU
+  PDP mewajibkan pemberitahuan kepada pemilik data dan regulator.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.41
+  - notifikasi_breach
+level: critical
+detection:
+  selection: {event_type: "data_export"}
+  filter_offhours: {hour: 're:^(0[0-7]|1[89]|2[0-3])$'}
+  condition: selection and filter_offhours
+  timeframe: 30m
+  count: 100
+cooldown_sec: 3600
+dedup_key: "{{user}}"

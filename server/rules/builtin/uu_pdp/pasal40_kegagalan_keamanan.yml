@@ -1,0 +1,24 @@
+title: Indikator kegagalan perlindungan data pribadi (Pasal 40 UU PDP)
+id: builtin-uu-pdp-pasal40-kegagalan-keamanan
+description: >
+  Mendeteksi anomali yang mengindikasikan kegagalan perlindungan
+  terhadap data pribadi, misalnya volume akses error yang tinggi,
+  percobaan dekripsi berulang, atau modifikasi log audit. Pasal 40
+  UU PDP mewajibkan pengendali dan prosesor melindungi data pribadi.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.40
+  - kegagalan_keamanan
+level: critical
+detection:
+  selection:
+    event_type: "security_anomaly"
+    severity: "high"
+  condition: selection
+cooldown_sec: 1800
+dedup_key: "{{source_ip}}"

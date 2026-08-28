@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-28
+
+### Added
+
+- **Compliance pack** — 51 new Sigma rules organized by framework:
+  - `iso27001_nist80053/` (13 rules): ISO 27001:2022 Annex A +
+    NIST SP 800-53. Each rule names the specific control
+    (A.5.15, A.5.16, A.5.17, A.5.18, A.5.24, A.5.25, A.5.28,
+    A.5.30, A.5.31, A.5.34, A.5.36, A.8.5, A.8.15).
+  - `pci_dss/` (13 rules): PCI DSS v4.0 requirements 1–12
+    (req1 firewall, req2 default creds, req3 cardholder data,
+    req4 encryption, req5 antimalware, req6 patches, req7 RBAC,
+    req8 user identification, req9 physical media, req10 audit
+    log, req11 vuln scan, req12 security policy, appendix C
+    payment app).
+  - `uu_pdp/` (13 rules): Indonesia UU PDP No. 27/2022 +
+    POJK/BI. Rules in Bahasa Indonesia, covering pasal
+    35–48, plus data-anak perlindungan and POJK-13 data
+    nasabah.
+  - `mitre_attack/` (12 rules): MITRE ATT&CK Enterprise
+    techniques (T1003, T1059, T1078, T1110, T1190, T1486,
+    T1490, T1543, T1547, T1552, T1567, T1569).
+  - Every rule has `tags` + `references` so auditors can
+    trace coverage to the standard.
+  - Total rules in `rules/builtin/`: 56 (51 compliance + 5
+    baseline).
+- **Go canary kinds extended** to 4:
+  - `file` (fsnotify)
+  - `tcp_socket` (net.Listen)
+  - `http_endpoint` (net/http server with 200 honeypot)
+  - `credential` (inotify-style watcher on `/etc/shadow`,
+    `/etc/passwd`).
+- **Evidence locker key rotation**:
+  - `EvidenceStore.rotate()` generates a new signing key
+    and keeps the old one in history (`current` / `previous`
+    slots).
+  - Old evidence still verifies after rotation.
+  - Sidecar JSON records the key id that signed each
+    bundle.
+  - Wiping a key causes evidence signed with it to fail
+    verification — chain-of-custody is preserved.
+
+### Tests added
+
+- `test_compliance_packs.py` (8 tests):
+  - Floor counts per pack.
+  - Unique ids across the whole tree.
+  - Every rule has `tags`.
+  - Every rule has `references`.
+- `test_evidence_rotation.py` (4 tests):
+  - Rotate changes active key.
+  - Evidence verifies across rotation.
+  - Sidecar records key id.
+  - Wiped key → verification fails.
+
+### Metrics
+
+- Server test count: **164** (was 152 at v0.7.0).
+- Go test packages: **10** (still all green).
+
 ## [0.7.0] - 2026-08-28
 
 ### Added

@@ -1,0 +1,25 @@
+title: Transfer data pribadi ke luar negeri (Pasal 46 UU PDP)
+id: builtin-uu-pdp-pasal46-transfer-lintas-batas
+description: >
+  Mendeteksi koneksi keluar ke server di negara tanpa tingkat
+  perlindungan data yang setara, khususnya saat membawa payload
+  data pribadi. Pasal 46 UU PDP mengatur pembatasan transfer.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.46
+  - transfer_lintas_batas
+level: critical
+detection:
+  selection:
+    event_type: "network_egress"
+    data_class: "pii"
+  filter_non_id:
+    country: 're:^(?!ID$).*'
+  condition: selection and filter_non_id
+cooldown_sec: 3600
+dedup_key: "{{dest_ip}}"

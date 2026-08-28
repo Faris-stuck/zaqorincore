@@ -1,0 +1,25 @@
+title: Registry Run key or LaunchAgent added (boot autostart)
+id: 8fe9b8ab-dca9-4ee1-9754-643c992d2d1e
+description: Detects writes to Windows Run/RunOnce keys or macOS LaunchAgent plists for persistence.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1547/
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://attack.mitre.org/techniques/T1547/011/
+tags:
+  - attack.t1547
+  - attack.persistence
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "registry_set"
+    key: 're:(?i)\\Microsoft\\Windows\\CurrentVersion\\Run(Once)?\\'
+  selection2:
+    event_type: "file_create"
+    filename: 're:^/Users/[^/]+/Library/LaunchAgents/[^/]+\.plist$'
+  condition: selection or selection2
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{hostname}}"

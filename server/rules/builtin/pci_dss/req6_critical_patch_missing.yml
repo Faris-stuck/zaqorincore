@@ -1,0 +1,23 @@
+title: Known vulnerable package detected at runtime (PCI DSS 6.3.3)
+id: 18bd3cec-029c-4ce2-8a26-f9b79bc0626d
+description: Detects a process matching a known vulnerable package version on
+  the CISA KEV list. PCI DSS 4.0 requirement 6.3.3 requires vendor-supplied
+  security patches within one month of release.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+tags:
+  - attack.t1190
+  - pci_dss.6.3.3
+level: critical
+detection:
+  selection:
+    event_type: process_exec
+    package_kev_match: true
+  condition: selection
+  timeframe: 10m
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{package}}"

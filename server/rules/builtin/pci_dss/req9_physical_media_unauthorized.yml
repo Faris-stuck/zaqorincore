@@ -1,0 +1,24 @@
+title: USB storage mounted on a server (PCI DSS 9.4.1)
+id: c0fa05cd-a5a7-40cc-84b1-0f3e67647a0a
+description: Detects a USB mass storage device being mounted on a host. PCI DSS
+  4.0 requirement 9.4.1 requires physical media containing cardholder data
+  to be controlled and inventoried.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1052.001
+  - pci_dss.9.4.1
+level: medium
+detection:
+  selection:
+    event_type: mount
+    device_type: usb
+    fs_type|re: '^(vfat|exfat|ntfs|ext[234])$'
+  condition: selection
+  timeframe: 5m
+  count: 1
+cooldown_sec: 600
+dedup_key: "{{hostname}}"

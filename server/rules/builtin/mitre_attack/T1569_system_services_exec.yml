@@ -1,0 +1,22 @@
+title: psexec / wmiexec / sc.exe service execution
+id: 4ae5a066-cacd-4892-98f0-c9dfe3b7f605
+description: Detects remote service execution via PsExec, WMI, or sc.exe create/start actions.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1569/
+  - https://attack.mitre.org/techniques/T1569/002/
+tags:
+  - attack.t1569
+  - attack.execution
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)(psexec(?:\.exe)?|wmic\.exe|sc\.exe|wmiexec\.py)'
+    command: 're:(\bcreate\b|\bcall\b|\binvoke\b|\bexec(ute)?\b|\bstart\b)'
+  condition: selection
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{destination_ip}}"

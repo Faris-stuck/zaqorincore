@@ -1,0 +1,23 @@
+title: Known-bad binary executed (PCI DSS 12.2.1)
+id: 1cebe9a9-0a0b-40c6-80c8-94eadbd41f57
+description: Detects execution of a binary present on the local deny-list such
+  as hacktools or remote access trojans. PCI DSS 4.0 requirement 12.2.1
+  requires a formal information security policy.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1059
+  - pci_dss.12.2.1
+level: critical
+detection:
+  selection:
+    event_type: process_exec
+    binary_denylist_match: true
+  condition: selection
+  timeframe: 5m
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{filename}}"

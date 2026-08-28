@@ -1,0 +1,30 @@
+title: Bulk access to PII directory
+id: f665ab56-e548-47f5-87a6-9e31b017887b
+description: >
+  Detects more than 20 file read or copy events against a known PII
+  directory inside 10 minutes. Bulk access to personally identifiable
+  information outside normal application flows is a privacy breach
+  indicator. Maps to ISO 27001:2022 A.5.34 (privacy and protection
+  of PII) and NIST SP 800-53 SI-12.1 (limit personally identifiable
+  information elements).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.34
+  - nist80053.SI-12.1
+  - attack.collection
+  - attack.t1213
+level: high
+detection:
+  selection:
+    event_type: "file_read"
+    filename: 'contains:/pii/'
+  condition: selection
+  timeframe: 10m
+  count: 20
+cooldown_sec: 3600
+dedup_key: "{{user}}"

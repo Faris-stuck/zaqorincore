@@ -1,0 +1,25 @@
+title: Pembaruan massal field identitas (Pasal 38 UU PDP)
+id: builtin-uu-pdp-pasal38-ketidakakuratan-data
+description: >
+  Mendeteksi pembaruan massal pada field identitas (nama, NIK, alamat,
+  telepon) yang dapat mengindikasikan perubahan tidak sah. Pasal 38
+  UU PDP mewajibkan pengendali data memastikan keakuratan data.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.38
+  - ketidakakuratan_data
+level: high
+detection:
+  selection:
+    event_type: "data_update"
+    field: "identity"
+  condition: selection
+  timeframe: 10m
+  count: 20
+cooldown_sec: 3600
+dedup_key: "{{user}}"

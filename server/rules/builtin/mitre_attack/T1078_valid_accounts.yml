@@ -1,0 +1,25 @@
+title: Valid account login from a new country (anomalous geo)
+id: 86e38520-c837-4448-9a7d-2b4e0c0fd440
+description: Flags successful logins for an existing user from a country never seen in prior 30 days.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1078/
+  - https://pages.nist.gov/cyberframework/
+tags:
+  - attack.t1078
+  - attack.initial_access
+  - nist_csf.PR.AC
+level: high
+detection:
+  selection:
+    event_type: "auth_login"
+    status: "success"
+  condition: selection
+  timeframe: 30d
+  distinct: country
+  by: user
+  count: 1
+cooldown_sec: 3600
+dedup_key: "{{user}}:{{country}}"

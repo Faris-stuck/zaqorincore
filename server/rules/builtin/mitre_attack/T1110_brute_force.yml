@@ -1,0 +1,24 @@
+title: SSH/RDP/FTP brute force (10 failures in 5m)
+id: a5ebb135-0ec7-4871-bb5b-8debb2182baf
+description: Detects repeated authentication failures across SSH, RDP and FTP services.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1110/
+tags:
+  - attack.t1110
+  - attack.credential_access
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "auth_login"
+    status: "failed"
+    service: 're:(?i)(ssh|rdp|ftp)'
+  condition: selection
+  timeframe: 5m
+  count: 10
+action: {kind: block_ip, target: "{{source_ip}}", ttl_sec: 3600}
+cooldown_sec: 600
+dedup_key: "{{source_ip}}"

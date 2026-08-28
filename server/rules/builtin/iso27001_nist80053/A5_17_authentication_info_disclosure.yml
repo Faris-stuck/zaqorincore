@@ -1,0 +1,26 @@
+title: Authentication log permissions weakened
+id: e56661bc-5ab8-4f36-8595-4d9de7baaeb7
+description: >
+  Detects chmod that widens permissions on authentication or system log
+  files. Log files must remain readable only by privileged accounts.
+  Maps to ISO 27001:2022 A.5.17 (authentication information) and NIST
+  SP 800-53 AC-9 (previous logon notification).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.17
+  - nist80053.AC-9
+  - attack.defense_evasion
+level: high
+detection:
+  selection:
+    event_type: "process_exec"
+    command: 're:chmod\s+.*(auth\.log|secure|/var/log/|/etc/shadow|/etc/passwd)'
+  condition: selection
+  timeframe: 10m
+cooldown_sec: 3600
+dedup_key: "{{user}}"

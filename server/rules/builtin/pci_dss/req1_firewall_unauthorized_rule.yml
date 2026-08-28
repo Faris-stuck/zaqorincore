@@ -1,0 +1,24 @@
+title: Firewall rule added by non-root user (PCI DSS 1.2.1)
+id: ccc6da37-0f0b-4fc3-91db-d848ca43a3de
+description: Detects iptables or nftables rule changes made by a non-root user.
+  PCI DSS 4.0 requirement 1.2.1 requires firewall configuration changes to be
+  performed by authorized administrators under change control.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1562.004
+  - pci_dss.1.2.1
+level: high
+detection:
+  selection:
+    event_type: process_exec
+    command|re: '^(iptables|nft)\s.*-(A|insert|add)'
+    user|ne: root
+  condition: selection
+  timeframe: 5m
+  count: 1
+cooldown_sec: 600
+dedup_key: "{{user}}"

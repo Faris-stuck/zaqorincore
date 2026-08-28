@@ -1,0 +1,25 @@
+title: Operasi admin di luar change window (Pasal 48 UU PDP)
+id: builtin-uu-pdp-pasal48-izin-pengontrol
+description: >
+  Mendeteksi operasi administratif pada sistem pemrosesan data
+  pribadi yang dilakukan di luar jendela perubahan (change window)
+  yang ditetapkan. Pasal 48 mengatur kewajiban persetujuan.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.48
+  - izin_pengontrol
+level: high
+detection:
+  selection:
+    event_type: "admin_op"
+    role: "admin"
+  filter_offhours:
+    hour: 're:^(0[0-6]|2[0-3])$'
+  condition: selection and filter_offhours
+cooldown_sec: 1800
+dedup_key: "{{user}}"

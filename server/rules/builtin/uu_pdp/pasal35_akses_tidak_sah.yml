@@ -1,0 +1,24 @@
+title: Akses data pribadi tanpa otorisasi (Pasal 35 UU PDP)
+id: builtin-uu-pdp-pasal35-akses-tidak-sah
+description: >
+  Mendeteksi upaya akses terhadap data pribadi yang tidak memiliki hak
+  akses sah. Pelanggaran terhadap Pasal 35 UU No. 27 Tahun 2022 tentang
+  Pelindungan Data Pribadi yang melarang akses terhadap data pribadi
+  tanpa persetujuan pemilik data.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.35
+  - akses_tidak_sah
+level: critical
+detection:
+  selection:
+    event_type: "data_access"
+    authorized: false
+  condition: selection
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{resource}}"

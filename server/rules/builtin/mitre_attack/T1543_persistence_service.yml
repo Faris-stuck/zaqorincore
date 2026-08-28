@@ -1,0 +1,23 @@
+title: New systemd service created (persistence)
+id: 63f692f6-0fe0-45c1-8fa6-fb609765af14
+description: Detects creation of a new systemd unit file under /etc/systemd/system or /lib/systemd/system.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1543/
+  - https://attack.mitre.org/techniques/T1543/002/
+tags:
+  - attack.t1543
+  - attack.persistence
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "file_create"
+    filename: 're:^/(etc|lib)/systemd/system/[^/]+\.service$'
+  condition: selection
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{filename}}"

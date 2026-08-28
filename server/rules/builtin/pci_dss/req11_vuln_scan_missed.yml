@@ -1,0 +1,23 @@
+title: Scheduled vulnerability scan did not run (PCI DSS 11.3.1)
+id: f00c4537-a577-4c44-ba6f-a8b9966f8fd2
+description: Detects when a scheduled internal vulnerability scan fails to
+  produce results within its expected window. PCI DSS 4.0 requirement 11.3.1
+  requires quarterly internal scans via an authenticated scanner.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1190
+  - pci_dss.11.3.1
+level: medium
+detection:
+  selection:
+    event_type: scheduled_scan_missed
+    scan_type: vuln_internal
+  condition: selection
+  timeframe: 24h
+  count: 1
+cooldown_sec: 86400
+dedup_key: "{{scan_id}}"

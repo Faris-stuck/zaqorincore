@@ -1,0 +1,28 @@
+title: Audit daemon stopped
+id: 4e069033-9e1d-4c8e-b854-d026e446536d
+description: >
+  Detects when the host audit daemon (auditd, sysmon, or similar) is
+  stopped, disabled, or killed. A stopped audit daemon disables event
+  recording. Maps to ISO 27001:2022 A.5.25 (assessment of security
+  events) and NIST SP 800-53 AU-2 (auditable events).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.25
+  - nist80053.AU-2
+  - attack.defense_evasion
+  - attack.t1562
+level: critical
+detection:
+  selection:
+    event_type: "service_state"
+    service: "auditd"
+    state: "stopped"
+  condition: selection
+  timeframe: 10m
+cooldown_sec: 3600
+dedup_key: "{{host_id}}"

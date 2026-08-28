@@ -1,0 +1,27 @@
+title: Evidence capture action triggered
+id: 9eb71fcf-a004-4c64-9d52-06f0f6e35b16
+description: >
+  Detects the evidence_capture response action firing. This action
+  snapshots disk state, running processes, and network connections
+  for later forensic analysis. Maps to ISO 27001:2022 A.5.28
+  (collection of evidence) and NIST SP 800-53 AU-12 (audit record
+  generation).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.28
+  - nist80053.AU-12
+  - attack.collection
+level: high
+detection:
+  selection:
+    event_type: "action_fired"
+    action_kind: "evidence_capture"
+  condition: selection
+  timeframe: 10m
+cooldown_sec: 600
+dedup_key: "{{host_id}}"

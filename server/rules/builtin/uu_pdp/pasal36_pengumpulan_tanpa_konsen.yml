@@ -1,0 +1,24 @@
+title: Pengumpulan data pribadi tanpa persetujuan (Pasal 36 UU PDP)
+id: builtin-uu-pdp-pasal36-pengumpulan-tanpa-konsen
+description: >
+  Mendeteksi pengumpulan data pribadi yang dilakukan tanpa dasar
+  persetujuan eksplisit dari pemilik data. Melanggar Pasal 36 UU PDP
+  yang mewajibkan persetujuan sebagai salah satu dasar pemrosesan
+  data pribadi.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.36
+  - pengumpulan_tanpa_konsen
+level: high
+detection:
+  selection:
+    event_type: "pii_collect"
+    consent: false
+  condition: selection
+cooldown_sec: 3600
+dedup_key: "{{source}}"

@@ -1,0 +1,25 @@
+title: Permintaan hapus data tidak ditindaklanjuti (Pasal 39 UU PDP)
+id: builtin-uu-pdp-pasal39-penghapusan-tidak-dilakukan
+description: >
+  Mendeteksi permintaan penghapusan data dari pemilik data (right
+  to be forgotten) yang tidak ditindaklanjuti tepat waktu. Pasal 39
+  UU PDP mewajibkan penghapusan atas permintaan pemilik data.
+author: zaqorincore compliance team
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://peraturan.bpk.go.id/Details/229299/uu-no-27-tahun-2022
+tags:
+  - compliance.uu_pdp
+  - pasal.39
+  - penghapusan_data
+level: critical
+detection:
+  selection:
+    event_type: "deletion_request"
+    status: "pending"
+  condition: selection
+  timeframe: 24h
+  count: 1
+cooldown_sec: 7200
+dedup_key: "{{user_id}}"

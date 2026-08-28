@@ -1,0 +1,21 @@
+title: vssadmin delete shadows / wbadmin delete catalog
+id: a3465288-d3b9-4778-92c4-2ee33419e6c9
+description: Detects commands that delete volume shadow copies or Windows backup catalogs.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1490/
+tags:
+  - attack.t1490
+  - attack.impact
+  - nist_csf.RP.RP
+level: critical
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)(vssadmin\.exe|wbadmin\.exe|wmic\.exe)'
+    command: 're:(\bdelete\b.*\bshadows?\b|\bdelete\b.*\bcatalog\b)'
+  condition: selection
+cooldown_sec: 3600
+dedup_key: "{{user}}:{{hostname}}"

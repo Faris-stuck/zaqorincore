@@ -1,0 +1,79 @@
+{
+  "name": "ZaqorinCore v0.8.0 coverage",
+  "versions": {
+    "navigator": 4,
+    "layer": 4
+  },
+  "domain": "enterprise-attack",
+  "description": "Sigma rule coverage for 12 core ATT&CK techniques, mapped to NIST CSF 2.0 functions.",
+  "techniques": [
+    {
+      "techniqueID": "T1003",
+      "score": 1,
+      "comment": "Detected by T1003_credential_dump.yml (NIST CSF DE.CM)"
+    },
+    {
+      "techniqueID": "T1059",
+      "score": 1,
+      "comment": "Detected by T1059_command_interpreter.yml (NIST CSF DE.AE)"
+    },
+    {
+      "techniqueID": "T1078",
+      "score": 1,
+      "comment": "Detected by T1078_valid_accounts.yml (NIST CSF PR.AC)"
+    },
+    {
+      "techniqueID": "T1110",
+      "score": 1,
+      "comment": "Detected by T1110_brute_force.yml (NIST CSF DE.CM)"
+    },
+    {
+      "techniqueID": "T1190",
+      "score": 1,
+      "comment": "Detected by T1190_exploit_public_app.yml (NIST CSF PR.PS)"
+    },
+    {
+      "techniqueID": "T1486",
+      "score": 1,
+      "comment": "Detected by T1486_data_encrypted_for_impact.yml (NIST CSF RS.RP)"
+    },
+    {
+      "techniqueID": "T1490",
+      "score": 1,
+      "comment": "Detected by T1490_inhibit_recovery.yml (NIST CSF RP.RP)"
+    },
+    {
+      "techniqueID": "T1543",
+      "score": 1,
+      "comment": "Detected by T1543_persistence_service.yml (NIST CSF DE.CM)"
+    },
+    {
+      "techniqueID": "T1547",
+      "score": 1,
+      "comment": "Detected by T1547_boot_autostart.yml (NIST CSF DE.CM)"
+    },
+    {
+      "techniqueID": "T1552",
+      "score": 1,
+      "comment": "Detected by T1552_unsecured_credentials.yml (NIST CSF PR.DS)"
+    },
+    {
+      "techniqueID": "T1567",
+      "score": 1,
+      "comment": "Detected by T1567_exfiltration_over_web.yml (NIST CSF DE.AE)"
+    },
+    {
+      "techniqueID": "T1569",
+      "score": 1,
+      "comment": "Detected by T1569_system_services_exec.yml (NIST CSF DE.CM)"
+    }
+  ],
+  "gradient": {
+    "colors": [
+      "#ffffff",
+      "#3b8a3a"
+    ],
+    "minValue": 0,
+    "maxValue": 1
+  }
+}

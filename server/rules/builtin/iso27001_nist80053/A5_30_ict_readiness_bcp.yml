@@ -1,0 +1,27 @@
+title: Backup process failure
+id: c811fddf-4287-49c9-b5e7-894bae8ddc15
+description: >
+  Detects a failed backup job, missing backup output, or non-zero exit
+  from a backup command. Failed backups leave the organisation unable
+  to recover from ransomware, hardware loss, or accidental deletion.
+  Maps to ISO 27001:2022 A.5.30 (ICT readiness for business
+  continuity) and NIST SP 800-53 CP-9 (information system backup).
+author: ZaqorinCore
+date: 2026/08/28
+modified: 2026/08/28
+references:
+  - https://www.iso.org/standard/27001
+  - https://csrc.nist.gov/projects/risk-management/sp800-53-controls/release-search
+tags:
+  - iso27001.A.5.30
+  - nist80053.CP-9
+  - attack.impact
+level: high
+detection:
+  selection:
+    event_type: "backup_status"
+    status: "failed"
+  condition: selection
+  timeframe: 1h
+cooldown_sec: 7200
+dedup_key: "{{host_id}}"

@@ -1,10 +1,32 @@
-title: Web attack (SQLi / XSS / traversal pattern in URL)
+title: Web attack (SQLi / XSS / path-traversal in URI)
 id: builtin-web-attack
 level: high
+description: |
+  Detects common web application attack patterns in HTTP request URIs:
+  SQL injection, XSS, and path traversal. Match is keyword-based for
+  inline use; for full coverage use ModSecurity in front of the
+  application.
+tags:
+  - attack.t1190   # MITRE ATT&CK Exploit Public-Facing Application
+  - compliance.iso27001.A5.7
+  - compliance.pci_dss.req6
+references:
+  - https://owasp.org/www-project-top-ten/
+  - https://attack.mitre.org/techniques/T1190/
 detection:
   selection:
     event_type: "http_request"
-    url: 're:(\bunion\b.*\bselect\b|<script\b|\.\./\.\./)'
   condition: selection
-cooldown_sec: 600
+  timeframe: 60s
+  count: 5
+  filter:
+    uri_match:
+      - "union.*select"
+      - "<script"
+      - "\\.\\./\\.\\./"
+action:
+  kind: block_ip
+  target: "{{source_ip}}"
+  ttl_sec: 3600
+cooldown_sec: 300
 dedup_key: "{{source_ip}}"

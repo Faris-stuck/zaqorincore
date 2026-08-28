@@ -1,0 +1,23 @@
+title: PowerShell or python -c spawn (command interpreter abuse)
+id: f65d3cac-d664-4454-ba58-8c596add68b8
+description: Detects powershell.exe or python launched with inline -c / -e / -EncodedCommand flags.
+author: ZaqorinCore
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://attack.mitre.org/techniques/T1059/
+  - https://attack.mitre.org/techniques/T1059/001/
+  - https://attack.mitre.org/techniques/T1059/006/
+tags:
+  - attack.t1059
+  - attack.execution
+  - nist_csf.DE.AE
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)(powershell\.exe|python\d?(?:\.\d+)?|pwsh)'
+    command: 're:(\b-enc(?:odedcommand)?\b|\b-e(?:c)?\b|\b-command\b)'
+  condition: selection
+cooldown_sec: 900
+dedup_key: "{{user}}:{{source_ip}}"

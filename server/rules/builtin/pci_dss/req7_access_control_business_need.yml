@@ -1,0 +1,23 @@
+title: Privileged access without a change ticket (PCI DSS 7.2.4)
+id: 231d45fb-6419-42ba-bb17-01102eaa5e9f
+description: Detects use of sudo by a user who has no approved change ticket
+  for the current window. PCI DSS 4.0 requirement 7.2.4 requires privileged
+  access to be reviewed and approved per business need.
+author: Zaqor Security
+date: 2026-08-28
+modified: 2026-08-28
+references:
+  - https://www.pcisecuritystandards.org/document_library
+tags:
+  - attack.t1078.003
+  - pci_dss.7.2.4
+level: high
+detection:
+  selection:
+    event_type: sudo_use
+    has_change_ticket: false
+  condition: selection
+  timeframe: 5m
+  count: 1
+cooldown_sec: 600
+dedup_key: "{{user}}"
