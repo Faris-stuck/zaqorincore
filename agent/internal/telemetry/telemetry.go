@@ -7,12 +7,19 @@
 // windows/ and darwin/ subpackages) provides the registry
 // skeleton that returns "platform not implemented" so the
 // build matrix compiles cleanly for all five GOOS targets.
+// v1.2 Slice 2 (this file) wires the real Windows Event Log
+// backend (see internal/telemetry/windows) for the windows
+// branch. The darwin branch remains the Slice 1 sentinel
+// because macOS is explicitly out of scope for v1.2
+// (user said "Yasudah windows dan Linux saja tidak usah mac").
 package telemetry
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/Faris-stuck/zaqorincore/agent/internal/telemetry/windows"
 )
 
 // Backend is the abstraction main.go calls to start a
@@ -25,13 +32,12 @@ type Backend interface {
 }
 
 // NewForPlatform returns the telemetry backend for the
-// current build target. Slice 1 always returns an
-// Unavailable sentinel that logs a one-time warning and
-// blocks on ctx. Slices 2 (Windows) and 4 (macOS) of v1.2
-// replace the windows/ and darwin/ branches with real
-// implementations; the linux/ branch continues to be
-// implemented by internal/tailer in v1.0.0.
-func NewForPlatform(platform string, logger *slog.Logger) (Backend, error) {
+// current build target. v1.2 Slice 2 (this file) wires the
+// real Windows Event Log backend (see
+// internal/telemetry/windows). The darwin branch keeps the
+// Slice 1 sentinel because macOS is out of scope for v1.2.
+// The linux branch is wired by main.go via internal/tailer.
+func NewForPlatform(platform string, hostID string, logger *slog.Logger) (Backend, error) {
 	switch platform {
 	case "linux":
 		// Wired up by main.go via internal/tailer.
@@ -39,7 +45,7 @@ func NewForPlatform(platform string, logger *slog.Logger) (Backend, error) {
 		// file-tail backend is registered separately.
 		return nil, fmt.Errorf("telemetry.NewForPlatform: use internal/tailer for linux")
 	case "windows":
-		return NewWindowsUnavailable(logger), nil
+		return windows.New(hostID, logger), nil
 	case "darwin":
 		return NewDarwinUnavailable(logger), nil
 	default:
@@ -48,21 +54,18 @@ func NewForPlatform(platform string, logger *slog.Logger) (Backend, error) {
 }
 
 // Unavailable is the placeholder returned by the v1.2
-// Slice 1 windows/ and darwin/ backends. It logs once
-// at startup and returns when ctx is canceled.
+// Slice 1 darwin/ backend. It logs once at startup and
+// returns when ctx is canceled. The windows branch is now
+// fully implemented (eventlog_windows.go) and no longer
+// uses this sentinel.
 type Unavailable struct {
 	platform string
 	logger   *slog.Logger
 }
 
-// NewWindowsUnavailable returns a Windows backend that
-// reports the platform is not yet implemented.
-func NewWindowsUnavailable(logger *slog.Logger) *Unavailable {
-	return &Unavailable{platform: "windows", logger: logger}
-}
-
 // NewDarwinUnavailable returns a macOS backend that
-// reports the platform is not yet implemented.
+// reports the platform is not yet implemented. macOS is
+// explicitly out of scope for v1.2.
 func NewDarwinUnavailable(logger *slog.Logger) *Unavailable {
 	return &Unavailable{platform: "darwin", logger: logger}
 }

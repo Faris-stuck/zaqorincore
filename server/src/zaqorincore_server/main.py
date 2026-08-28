@@ -23,13 +23,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import health, v1
-from .api.v1 import alerts, canary, evidence, events, hosts, hunt, stream
+from .api.v1 import alerts, canary, evidence, events, hosts, hunt, soar as soar_api, stream
 from .config import get_settings
 from .db import dispose_engine, get_session_factory, init_engine
 from .detectors import runner as detector_runner
 from .dispatcher import Dispatcher
 from .logging import configure_logging, get_logger
 from .security import SecurityHeadersMiddleware
+from .soar.worker import SoarWorker
 from .streams.publisher import close_redis, ensure_consumer_group, get_redis
 
 # Path to the bundled SPA (index.html + static/app.js). Resolved relative
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     factory = get_session_factory()
     runner_task: asyncio.Task[None] | None = None
     dispatcher: Dispatcher | None = None
+    soar_worker: SoarWorker | None = None
     if settings.streams_enabled:
         # Touch Redis so we fail fast at startup if it's unreachable.
         await get_redis()
@@ -64,11 +66,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.dispatcher_enabled:
         dispatcher = Dispatcher(settings, factory)
         dispatcher.start()
+    if settings.soar_enabled:
+        soar_worker = SoarWorker(settings, factory)
+        soar_worker.start()
+        # Attach to app.state for the API router.
+        app.state.soar_worker = soar_worker  # type: ignore[attr-defined]
 
     try:
         yield
     finally:
         log.info("zaqorin shutting down")
+        if soar_worker is not None:
+            await soar_worker.stop()
         if dispatcher is not None:
             await dispatcher.stop()
         if runner_task is not None and not runner_task.done():
@@ -112,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(hunt.router)
     app.include_router(canary.router)
     app.include_router(evidence.router)
+    app.include_router(soar_api.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
     # root; if the directory is missing (e.g. server-only deployment), the

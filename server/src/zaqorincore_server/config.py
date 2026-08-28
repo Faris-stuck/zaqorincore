@@ -90,6 +90,13 @@ class Settings(BaseSettings):
     # under `rules/builtin/` next to the package.
     rules_dir: str = "rules/builtin"
 
+    # --- SOAR worker (v1.3.0, ADR-008) ---
+    # When False, the SOAR worker is not started. Tests that
+    # don't want a background event loop set this to False.
+    soar_enabled: bool = True
+    # Path to the TOML config. Resolved by the SOAR package.
+    soar_config: str = "config/soar.toml"
+
 
 _settings: Settings | None = None
 

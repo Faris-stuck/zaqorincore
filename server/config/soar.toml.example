@@ -1,0 +1,160 @@
+# ZaqorinCore SOAR config (ADR-008 / v1.3.0)
+#
+# Drop this file at server/config/soar.toml (or set
+# ZAQORIN_SOAR_CONFIG to the absolute path). It is OPTIONAL;
+# if missing, the SOAR worker is disabled and no webhook
+# calls are made.
+#
+# Per-backend `cooldown_sec` is the debounce window per
+# (backend, host_id, detector) tuple. `severity_min` is the
+# lowest severity that will fire the backend
+# (info|low|medium|high|critical). `tags_filter = []` means
+# "no filter" — fire for any alert tag. `max_retries` is the
+# number of retry attempts after the initial failure; 4xx
+# responses are NEVER retried, only 5xx and network errors.
+
+[soar]
+enabled = false
+poll_sec = 2.0
+queue_max = 1000
+# Where the dead-letter files live. Resolved relative to the
+# server package root if not absolute. The directory is
+# created on first dead-letter write.
+dead_letter_dir = "var/soar/dead-letter"
+# Base URL used in {{ console_url }} template substitution so
+# delivered messages can link back to the ZaqorinCore web
+# console. Empty string disables the link.
+public_base_url = ""
+
+# ─── Generic Webhook ─────────────────────────────────────────────
+# Default backend. Send whatever JSON the target system wants;
+# the body is rendered from the `template` string with
+# Jinja2-style {{ alert.id }} substitution. Available vars:
+#   alert.id, alert.host_id, alert.detector, alert.severity,
+#   alert.summary, alert.tags (list), alert.evidence (text),
+#   alert.metadata (dict), console_url, ts (ISO timestamp).
+[backends.generic_webhook]
+enabled = false
+cooldown_sec = 60
+severity_min = "medium"
+tags_filter = []
+max_retries = 5
+timeout_sec = 10.0
+url = "https://example.invalid/hook"
+method = "POST"
+content_type = "application/json"
+# IMPORTANT: keep template as a multi-line literal with the
+# JSON inside the quoted string. Operators edit this; do not
+# hardcode credentials here.
+template = """
+{
+  "alert_id": "{{ alert.id }}",
+  "host_id": "{{ alert.host_id }}",
+  "detector": "{{ alert.detector }}",
+  "severity": "{{ alert.severity }}",
+  "summary": "{{ alert.summary }}",
+  "tags": [{% for t in alert.tags %}"{{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+  "console_url": "{{ console_url }}#/alerts/{{ alert.id }}",
+  "ts": "{{ ts }}"
+}
+"""
+# Optional: Authorization header value. Do not hardcode tokens
+# in this file in production; set the env var and reference it
+# from your deployment layer, or rotate the value out of band.
+# auth_header = "Bearer change-me"
+
+# ─── Slack ───────────────────────────────────────────────────────
+# Posts a Block-Kit-formatted message to a Slack Incoming
+# Webhook URL. The webhook URL itself is a secret; configure
+# it out of band.
+[backends.slack]
+enabled = false
+cooldown_sec = 60
+severity_min = "medium"
+tags_filter = []
+max_retries = 5
+timeout_sec = 10.0
+# Generate at https://api.slack.com/messaging/webhooks
+webhook_url = "https://hooks.slack.com/services/REPLACE/ME/HERE"
+# Optional override of the username shown in the channel.
+username = "ZaqorinCore"
+# Optional override of the channel (if your webhook allows it).
+# channel = "#soc-alerts"
+
+# ─── Discord ─────────────────────────────────────────────────────
+# Posts an embed to a Discord webhook URL. Same secret-handling
+# note as Slack.
+[backends.discord]
+enabled = false
+cooldown_sec = 60
+severity_min = "medium"
+tags_filter = []
+max_retries = 5
+timeout_sec = 10.0
+webhook_url = "https://discord.com/api/webhooks/REPLACE/ME"
+
+# ─── PagerDuty ───────────────────────────────────────────────────
+# PagerDuty Events API v2. `routing_key` is the integration
+# key for the PagerDuty service. Each alert becomes one
+# PagerDuty incident; `dedup_key` is `zaqorin:{alert.id}` so
+# retries collapse into the same incident.
+[backends.pagerduty]
+enabled = false
+cooldown_sec = 60
+severity_min = "high"
+tags_filter = []
+max_retries = 5
+timeout_sec = 10.0
+routing_key = "REPLACE_WITH_INTEGRATION_KEY"
+# Map ZaqorinCore severity -> PagerDuty severity.
+# (critical|error|warning|info) on PagerDuty's side.
+severity_map = { critical = "critical", high = "error", medium = "warning", low = "warning", info = "info" }
+
+# ─── TheHive ─────────────────────────────────────────────────────
+# TheHive v5 alert-create API. `api_url` is the base URL of
+# your TheHive instance; `api_key` is the org-level API key
+# (rotate via TheHive's UI). `case_template` is the case
+# template name (optional).
+[backends.thehive]
+enabled = false
+cooldown_sec = 60
+severity_min = "medium"
+tags_filter = []
+max_retries = 5
+timeout_sec = 10.0
+api_url = "https://thehive.example.com"
+api_key = "REPLACE_WITH_THEHIVE_API_KEY"
+# TheHive "type" field for the created alert.
+alert_type = "external"
+# Source identifier shown in TheHive's UI.
+source = "zaqorincore"
+# Optional case template applied when TheHive auto-promotes
+# the alert to a case.
+# case_template = "soc-default"
+
+# ─── Jira ────────────────────────────────────────────────────────
+# Atlassian Cloud REST API v3. `api_url` is
+# https://your-tenant.atlassian.net; `project_key` is the
+# short key (e.g. "SOC"). `issue_type` is the issue type
+# name as configured in your project (default "Task").
+[backends.jira]
+enabled = false
+cooldown_sec = 60
+severity_min = "medium"
+tags_filter = []
+max_retries = 5
+timeout_sec = 10.0
+api_url = "https://your-tenant.atlassian.net"
+project_key = "SOC"
+issue_type = "Task"
+# Email + API token. The token is generated at
+# https://id.atlassian.com/manage-profile/security/api-tokens
+# Do NOT commit a real token; reference an env var in your
+# deployment layer.
+email = "[email protected]"
+api_token = "REPLACE_WITH_ATLASSIAN_API_TOKEN"
+# Optional: override the default priority mapping
+# (low|medium|high). The default maps critical/high/medium/
+# low/info to Jira priority by the same names; if the
+# priority doesn't exist in your project, the field is
+# omitted.
