@@ -15,9 +15,12 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .api import health, v1
 from .api.v1 import alerts, canary, evidence, events, hosts, hunt, stream
@@ -26,7 +29,12 @@ from .db import dispose_engine, get_session_factory, init_engine
 from .detectors import runner as detector_runner
 from .dispatcher import Dispatcher
 from .logging import configure_logging, get_logger
+from .security import SecurityHeadersMiddleware
 from .streams.publisher import close_redis, ensure_consumer_group, get_redis
+
+# Path to the bundled SPA (index.html + static/app.js). Resolved relative
+# to this file so it works regardless of the current working directory.
+_WEBUI_DIR = Path(__file__).resolve().parent.parent.parent.parent / "webui"
 
 
 @asynccontextmanager
@@ -79,15 +87,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ZaqorinCore Server",
-        version="0.4.0",
+        version="0.9.0",
         description=(
             "Central server for ZaqorinCore. Accepts WebSocket streams "
             "from zaqorin-agent, persists events to PostgreSQL, runs "
             "detectors, persists alerts, and (Phase 4) dispatches "
-            "auto-response actions back to the originating host."
+            "auto-response actions back to the originating host. "
+            "Phase 9 ships the bundled web console at /."
         ),
         lifespan=lifespan,
     )
+
+    # Security headers first (innermost in Starlette = outermost in response)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Health (no /api prefix)
     app.include_router(health.router)
@@ -100,6 +112,18 @@ def create_app() -> FastAPI:
     app.include_router(hunt.router)
     app.include_router(canary.router)
     app.include_router(evidence.router)
+
+    # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
+    # root; if the directory is missing (e.g. server-only deployment), the
+    # / route 404s gracefully and the API still works.
+    if _WEBUI_DIR.exists():
+        static_dir = _WEBUI_DIR / "static"
+        if static_dir.exists():
+            app.mount("/static", StaticFiles(directory=static_dir), name="webui-static")
+
+        @app.get("/", include_in_schema=False)
+        async def spa_index() -> FileResponse:
+            return FileResponse(_WEBUI_DIR / "index.html")
 
     return app
 

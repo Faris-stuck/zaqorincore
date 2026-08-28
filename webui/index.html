@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZaqorinCore Console</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --panel-2: #21262d;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --critical: #f85149;
+        --high: #ff7b72;
+        --medium: #d29922;
+        --low: #3fb950;
+        --info: #79c0ff;
+        --critical-bg: rgba(248, 81, 73, 0.1);
+        --high-bg: rgba(255, 123, 114, 0.1);
+        --medium-bg: rgba(210, 153, 34, 0.1);
+        --low-bg: rgba(63, 185, 80, 0.1);
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+        min-height: 100vh;
+      }
+      header {
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      header h1 {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      header .ver {
+        font-size: 12px;
+        color: var(--muted);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+      nav {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      nav a:hover { background: var(--panel-2); color: var(--text); }
+      nav a.active { background: var(--panel-2); color: var(--text); }
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .toolbar input, .toolbar select, .toolbar button {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+      .toolbar input { min-width: 280px; }
+      .toolbar button { cursor: pointer; }
+      .toolbar button:hover { background: var(--panel-2); }
+      .toolbar .count {
+        color: var(--muted);
+        font-size: 13px;
+        margin-left: auto;
+      }
+      .alert {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-left-width: 3px;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        padding: 12px 16px;
+      }
+      .alert.sev-critical { border-left-color: var(--critical); }
+      .alert.sev-high { border-left-color: var(--high); }
+      .alert.sev-medium { border-left-color: var(--medium); }
+      .alert.sev-low { border-left-color: var(--low); }
+      .alert .row1 {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .alert .summary {
+        font-weight: 500;
+        font-size: 14px;
+        flex: 1;
+      }
+      .alert .severity {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 4px;
+        letter-spacing: 0.5px;
+      }
+      .alert .severity.sev-critical { color: var(--critical); background: var(--critical-bg); }
+      .alert .severity.sev-high { color: var(--high); background: var(--high-bg); }
+      .alert .severity.sev-medium { color: var(--medium); background: var(--medium-bg); }
+      .alert .severity.sev-low { color: var(--low); background: var(--low-bg); }
+      .alert .row2 {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .alert .row2 .k { color: var(--muted); }
+      .alert .row2 .v { color: var(--text); font-family: ui-monospace, monospace; }
+      .alert details {
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      .alert details pre {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 8px;
+        margin-top: 4px;
+        overflow-x: auto;
+        color: var(--text);
+        font-size: 11px;
+      }
+      .empty {
+        text-align: center;
+        color: var(--muted);
+        padding: 48px;
+      }
+      .loading {
+        text-align: center;
+        color: var(--muted);
+        padding: 48px;
+      }
+      .error {
+        background: var(--critical-bg);
+        color: var(--critical);
+        border: 1px solid var(--critical);
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+      }
+      .pagination {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+        justify-content: center;
+        align-items: center;
+      }
+      .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1",
+          "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+        }
+      }
+    </script>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

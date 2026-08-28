@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-28
+
+### Added
+
+- **Bundled web console** — single-page React 18 app served
+  from the same FastAPI process. Drop the binary on a host,
+  point a browser at `http://<host>:8000/`, get the whole SOC.
+  - **Alerts** (`#/alerts`): filter by severity / host_id,
+    paginate via `before` cursor, expand JSON detail per
+    alert.
+  - **Hunt** (`#/hunt`): list all 56 rules, pick one, run
+    against the last 1/7/30/90 days, render matches.
+  - **Evidence** (`#/evidence`): list every signed bundle,
+    one-click verify against the stored HMAC + SHA-256
+    sidecar. Shows "chain of custody intact" / "INVALID".
+  - **Canary** (`#/canary`): list active canaries, create
+    new file / tcp_socket / http_endpoint / credential
+    canaries, surface every `touched` event.
+  - SPA is a single HTML file + one `static/app.js` bundle
+    (no build step, no Node toolchain).
+- **`SecurityHeadersMiddleware`** — applies a baseline of
+  HTTP security headers to every response (API + SPA):
+  CSP, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
+  `Permissions-Policy: camera=(), microphone=(),
+  geolocation=(), payment=()`. This is a SOC console —
+  none of those features are ever needed.
+- **CSP is allowlisted** so the page can load React 18
+  from the esm.sh CDN with a documented post-1.0
+  tightening plan (`script-src 'self'` only, after
+  vendoring React into `webui/static/vendor/`).
+- 6 new tests in `tests/test_webui.py` covering SPA
+  serving + security headers (170/170 server tests pass).
+
+### Notes
+
+- **No auth UI yet.** The console assumes the server is
+  reachable only on a trusted network. Adding
+  OIDC/SAML/mTLS/bearer-token auth is a v1.0+ task; see
+  the Phase 9 doc + `ROADMAP.md`.
+- FastAPI app version bumped `0.8.0 → 0.9.0`.
+- Zero new Go code — Phase 9 is server + browser only.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added

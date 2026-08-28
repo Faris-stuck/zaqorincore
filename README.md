@@ -14,7 +14,8 @@ The whole loop — log tail → stream → detection → alert → action — ru
 - 🔎 **Real-time attack detection (Phase 3)** — events stream from agent to server, detectors run as they arrive
 - 🛡️ **Defensive auto-response (Phase 4)** — block IPs via `iptables`/`nftables` directly on the offending host (no shared ban list, no upstream service)
 - 🧩 **Plugin detectors** — write a detector in Python, drop it in `detectors/`, restart the server
-- 📊 **Multi-host dashboard** — see every protected host, every event, every action from one place
+- 📊 **Multi-host dashboard** — bundled React web console at `http://<server>/`; filter alerts, run hunts, verify evidence, manage canaries from any browser on the trusted network
+- 🖥️ **Web console (v0.9.0)** — alerts / hunt / evidence / canary, single page, served from the same FastAPI as the API
 - 🔐 **Self-hosted** — your logs never leave your network
 
 ## What it does *not* do
