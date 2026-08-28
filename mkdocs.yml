@@ -97,6 +97,9 @@ nav:
       - ADR-003 9 action kinds: decisions/ADR-003-action-kinds-nine-kinds.md
       - ADR-004 Sigma engine: decisions/ADR-004-rule-engine-sigma-compatible.md
       - ADR-005 deception/forensics: decisions/ADR-005-deception-forensics-zerocost.md
+      - ADR-006 eBPF kernel telemetry (proposed): decisions/ADR-006-ebpf-kernel-telemetry.md
+      - ADR-007 multi-platform agents (proposed): decisions/ADR-007-multi-platform-agents.md
+      - ADR-008 SOAR webhook delivery (proposed): decisions/ADR-008-soar-webhook-delivery.md
   - Reference:
       - 5-min demo: DEMO.md
       - Changelog: https://github.com/Faris-stuck/zaqorincore/blob/main/CHANGELOG.md

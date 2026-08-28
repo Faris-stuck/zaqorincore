@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -258,7 +257,12 @@ func KillProcess(ctx context.Context, pidStr string, _ int, dryRun bool, log *sl
 		log.Info("response: dry-run, not killing process", slog.Int("pid", pid))
 		return nil
 	}
-	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+	// Platform-specific kill. Unixes (linux, darwin) use
+	// syscall.Kill; Windows uses OpenProcess+TerminateProcess
+	// (declared in kill_windows.go). The split lets the package
+	// build for all five GOOS targets even though v1.0.0 only
+	// ships the linux binary.
+	if err := platformKill(pid); err != nil {
 		return fmt.Errorf("kill_process: kill %d: %w", pid, err)
 	}
 	log.Info("response: killed process", slog.Int("pid", pid))

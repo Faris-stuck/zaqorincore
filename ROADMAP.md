@@ -411,36 +411,309 @@ locker files, and toggles `auto_block` on a host.
 
 ---
 
-## Phase 10 — Production launch ⏳
+## Phase 10 — Production launch ✅
 
 **Goal:** announce the project to the world. The platform is
 production-ready for individual, startup, and enterprise use.
 
-**Planned approach:**
-
-- Dedicated docs site (this repo's `docs/` rendered via MkDocs
-  + GitHub Pages).
-- Demo video (<5 min) showing the full loop: trigger → detect
-  → action → evidence.
-- Post to HN, r/selfhosted, r/sysadmin, Lobsters, applicable
-  Discords.
-- First "stable" release tag `v1.0.0`.
+**Status:** shipped as v1.0.0 (commit `e5b245e`, tag `v1.0.0`
++ GitHub Release live). Mkdocs docs site at
+`https://faris-stuck.github.io/zaqorincore/`, 5-minute demo,
+HN submission text, DB-free launch smoke + live-stack smoke.
 
 **Done when:** GitHub repo shows organic stars / forks /
 issues from people who are not the maintainer.
 
 ---
 
+## Post-1.0.0 roadmap
+
+### v1.1.0 — eBPF kernel telemetry ⏳
+
+**Goal:** kernel-vouched signal for the things text logs
+can't capture. Closes the largest detection gap (userspace
+log tampering, missing process/file/connect events, short-
+lived processes).
+
+**ADR:** [ADR-006](docs/decisions/ADR-006-ebpf-kernel-telemetry.md)
+
+**Probes (one per slice):**
+
+- [ ] `execve_monitor` — process exec (web shell, LOLBin,
+      attacker tool)
+- [ ] `openat_monitor` — file open (SSH key, /etc/shadow,
+      /proc/*/mem)
+- [ ] `connect_monitor` — outbound TCP/UDP connect (C2
+      beaconing, lateral movement, exfil)
+- [ ] `ptrace_monitor` — process injection / debugger attach
+- [ ] `setuid_monitor` — SUID privilege escalation
+
+**Cross-cutting:**
+
+- [ ] Fallback to file-tail on kernel < 5.4 or no `CAP_BPF`
+- [ ] Per-probe enable/disable in `agent.toml`
+- [ ] Sigma rules for all 5 probes
+- [ ] Operator guide update
+
+### v1.2.0 — Multi-platform agents ⏳
+
+**Goal:** Windows and macOS hosts participate in the same
+fleet-wide detection and response.
+
+**ADR:** [ADR-007](docs/decisions/ADR-007-multi-platform-agents.md)
+
+**Build matrix (5 targets, all compile in v1.0.0):**
+
+- [ ] Linux amd64 (v1.0.0 baseline)
+- [ ] Linux arm64 (v1.0.0 baseline)
+- [ ] Windows amd64 (Event Log + ETW opt-in)
+- [ ] Windows arm64 (same)
+- [ ] macOS amd64 (Endpoint Security Framework)
+- [ ] macOS arm64 (Apple Silicon; same)
+
+**Per-platform slices:**
+
+- [ ] Windows Event Log telemetry (4624/4625/4688/4698)
+- [ ] Windows action applier (4 kinds via netsh/taskkill)
+- [ ] macOS ESF telemetry (exec/open/connect/kextload)
+- [ ] macOS action applier (4 kinds via pf/kill)
+- [ ] MSI / DMG / WinSW / launchd packaging
+- [ ] 10-20 new platform-specific Sigma rules
+
+### v1.3.0 — SOAR webhook delivery ⏳
+
+**Goal:** alerts reach humans where they already are, in
+under a minute.
+
+**ADR:** [ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md)
+
+**Backends (one per slice):**
+
+- [ ] Generic Webhook (JSON template)
+- [ ] Slack (Block Kit)
+- [ ] Discord (embed)
+- [ ] PagerDuty (Events API v2 + dedup_key)
+- [ ] TheHive (alert create API)
+- [ ] Jira (issue create API)
+
+**Cross-cutting:**
+
+- [ ] Per-backend `cooldown_sec` + `severity_min` + `tags_filter`
+- [ ] Dead-letter persistence + replay endpoint
+- [ ] `soar_deliveries` audit table + web console tab
+- [ ] 4xx is not retried; 5xx is retried with exponential
+      backoff (1s/5s/25s/125s/625s)
+
+---
+
 ## Non-goals (for now)
 
 - Cloud-managed SaaS tier
-- macOS / Windows agents
 - Sharing ban lists between ZaqorinCore instances
 - Commercial support contracts
 - Auto-tuning detector thresholds with ML
 - Mobile app
 
 If you need one of these, open an issue and we will talk — but they are not in the plan.
+
+## v1.1 — Kernel telemetry (eBPF) ⏳
+
+**Goal:** extend the Go agent with eBPF probes that capture
+syscall interrupts and process activity directly from the Linux
+kernel — no longer rely solely on text log files.
+
+**Why:** text logs can be **tampered with, truncated, or
+forged** by a sophisticated attacker (log tampering is
+ATT&CK T1070.002). Kernel-level telemetry is the only signal
+the kernel itself vouches for: every `execve`, `open`, `connect`,
+`ptrace`, `setuid` goes through it. eBPF lets us read these
+without a kernel module (no recompile, no reboot, no GPL
+exposure of the agent).
+
+**Planned approach:**
+
+- New Go package `agent/internal/ebpf/` using
+  [`cilium/ebpf`](https://github.com/cilium/ebpf) for the
+  Go-side loader + maps.
+- C source in `agent/internal/ebpf/probes/` for the actual
+  BPF programs:
+  - `execve_monitor.c` — hooks `sys_enter_execve`, captures
+    `{pid, uid, comm, argv[0..3]}` per process exec.
+  - `open_monitor.c` — hooks `sys_enter_openat`, captures
+    `{pid, uid, filename}` for sensitive paths
+    (`/etc/passwd`, `/etc/shadow`, `~/.ssh/`, `~/.aws/`,
+    `/proc/*/mem`).
+  - `connect_monitor.c` — hooks `sys_enter_connect`, captures
+    `{pid, uid, dst_ip, dst_port}` for outbound connections.
+  - `ptrace_monitor.c` — hooks `sys_enter_ptrace`, captures
+    `{pid, target_pid}` (process injection / debugging).
+  - `setuid_monitor.c` — hooks `sys_enter_setuid`, captures
+    `{pid, uid, new_uid}` (privilege escalation attempts).
+- All events land in a BPF ring buffer → userspace reader in
+  the Go agent → reuses the existing `internal/event` wire
+  contract → sent via the same WebSocket transport.
+- **Backwards compatible:** if the host has no BPF support
+  (old kernel, BPF disabled, no CAP_BPF), the agent logs a
+  warning and continues with the existing file-tail mode.
+  No breakage.
+- **No new dependencies** at runtime besides the kernel ≥ 5.4
+  and `CAP_BPF` (or `CAP_SYS_ADMIN` on older kernels).
+- **No AI in the probes.** Every captured event is a fact
+  (syscall happened with these args), not an inference.
+
+**Detection payoff:** new Sigma rules that were previously
+impossible become trivial:
+
+- "Process exec from a web server child" (web shell) →
+  `execve` with `comm=httpd` and `comm=bash` parented in
+  the same cgroup.
+- "Reads of SSH private keys" → `openat` on `~/.ssh/id_*`.
+- "Outbound connection to a non-RFC1918 IP from a server"
+  → `connect` to a public IP from a host whose tag is
+  `dmz=internal`.
+- "Process injection" → `ptrace` on a process in another
+  PID namespace.
+
+**Done when:** the agent runs on Linux ≥ 5.4 with the BPF
+probes loaded, captures 1,000 exec events without dropping,
+ships them to the server, and the server's existing detector
+pipeline can match them via the new Sigma rules added in
+this phase.
+
+## v1.2 — Multi-platform agents (Windows + macOS) ⏳
+
+**Goal:** add first-class agents for Windows and macOS so a
+homogeneous fleet (Linux servers + Windows workstations +
+macOS laptops) reports through the same ZaqorinCore server.
+
+**Why:** the v1.0.0 agent is Linux-only. Production fleets
+are mixed. A security tool that only sees Linux is blind to
+60-80% of typical enterprise endpoints.
+
+**Planned approach:**
+
+- **Windows agent** (Go, using the same module structure):
+  - Telemetry source: **Event Log** via `wevtapi` (Go
+    bindings via `github.com/0xrawsec/golang-winrt` or
+    direct syscalls) for the existing categories:
+    Security (4624/4625 logon, 4688 process create, 4698
+    scheduled task), System, Application.
+  - Optional kernel-level source: **ETW (Event Tracing for
+    Windows)** via `github.com/bi-zone/etw` or Microsoft
+    `xperf` consumers. ETW is the Windows equivalent of
+    eBPF: same kernel-vouched guarantees, same "no
+    tampering by userspace" property.
+  - Reuses the existing wire contract (HELLO/EVENT/BYE/COMMAND).
+  - Action kinds that apply: `kill_process`, `quarantine_file`,
+    `isolate_host` (Windows Firewall rule), `revoke_credential`
+    (cached Kerberos ticket purge).
+  - Skipped on Windows: `block_ip` via nftables (Windows uses
+    `netsh advfirewall` instead, implemented as
+    `block_ip_win` action kind that maps to a firewall rule).
+
+- **macOS agent** (Go):
+  - Telemetry source: **Endpoint Security Framework** (ESF,
+    the macOS equivalent of eBPF + ETW). Go bindings via
+    [`github.com/groob/esext`](https://github.com/groob/esext)
+    or `github.com/elastic/go-esext` style.
+  - ESF events: `ES_EVENT_TYPE_AUTH_EXEC`,
+    `ES_EVENT_TYPE_AUTH_OPEN`,
+    `ES_EVENT_TYPE_AUTH_KEXTLOAD`,
+    `ES_EVENT_TYPE_NOTIFY_CONNECT`, etc.
+  - Requires **System Extension entitlement** and a
+    notarized helper — documented in the operator guide.
+  - Action kinds that apply: `kill_process`, `quarantine_file`
+    (`.quarantine` xattr), `revoke_credential` (keychain
+    entry removal via `security delete-generic-password`).
+
+- **Build matrix:**
+  - Linux: amd64 + arm64 (already shipped)
+  - Windows: amd64 (`zaqorin-agent.exe` with WinSW
+    service wrapper)
+  - macOS: amd64 + arm64 (universal binary, notarized for
+    distribution outside the App Store)
+
+**Done when:** a Windows host and a macOS host each report
+events to the same ZaqorinCore server, generate alerts via
+the existing detector pipeline, and respond to COMMAND
+frames with platform-appropriate action kinds.
+
+## v1.3 — SOAR automations (webhook delivery) ⏳
+
+**Goal:** push alerts (and optionally actions) to external
+collaboration and ticketing systems so an existing SOC
+workflow (Slack, Discord, Jira, ServiceNow, PagerDuty,
+TheHive) gets notified without anyone having to leave
+ZaqorinCore's web console.
+
+**Why:** "the alert is in the system" is only useful if the
+**right human sees it fast enough**. Email is too slow,
+the web console needs an operator to be looking, and most
+SOC teams already have on-call rotations in PagerDuty or
+chat-ops in Slack. SOAR = **S**ecurity **O**rchestration
+**A**utomation and **R**esponse.
+
+**Planned approach:**
+
+- New `server/src/zaqorincore_server/soar/` package with
+  one router + N delivery backends.
+- **Delivery contract:** POST JSON to a user-configured
+  webhook URL, with a per-backend payload transformer.
+  Example for Slack:
+  ```json
+  {
+    "blocks": [
+      {"type": "header", "text": {"type": "plain_text",
+        "text": "🚨 ssh_bruteforce — 203.0.113.42"}},
+      {"type": "section", "fields": [
+        {"type": "mrkdwn", "text": "*Host:*\nserver-01"},
+        {"type": "mrkdwn", "text": "*Severity:*\nhigh"}
+      ]},
+      {"type": "actions", "elements": [
+        {"type": "button", "text": {"type": "plain_text",
+          "text": "View in ZaqorinCore"},
+          "url": "https://zaqorin.example.com/#/alerts/..."}
+      ]}
+    ]
+  }
+  ```
+- **Backends shipped in v1.3:**
+  - **Generic webhook** — raw JSON, user-defined template
+    (Jinja2-style, server-side rendered, no user JS).
+  - **Slack** — Slack Block Kit payload format.
+  - **Discord** — Discord webhook embed format.
+  - **PagerDuty** — Events API v2 (low/medium/high
+    severity mapped from ZaqorinCore alert severity).
+  - **TheHive** — alert create via TheHive v5 REST API.
+  - **Jira** — issue create via Atlassian REST API v3.
+- **Configuration:** TOML at
+  `server/config/soar.toml` (gitignored, generated from
+  `soar.toml.example`). Each backend has: `enabled`, `url`,
+  `auth_header`, `severity_min`, `tags_filter` (only fire
+  for alerts matching these tags), `cooldown_sec` (avoid
+  storm — same alert ID won't re-fire within this window).
+- **Retry + dead-letter:** exponential backoff (1s, 5s, 25s,
+  125s, 625s) for 5xx, immediate drop for 4xx (config
+  error). After exhaustion, write the payload to
+  `server/var/soar/dead-letter/<timestamp>-<alert_id>.json`
+  for manual replay.
+- **New API endpoints:**
+  - `GET  /api/v1/soar/backends` — list configured backends
+    with their health (last 24h delivery stats).
+  - `POST /api/v1/soar/backends/{name}/test` — fire a
+    synthetic alert through the backend to verify config.
+  - `GET  /api/v1/soar/dead-letter` — list dead-lettered
+    payloads, with `POST /replay` to re-fire one.
+- **Audit:** every delivery (success, fail, dead-letter) is
+  logged to a new `soar_deliveries` table (alert_id,
+  backend, status_code, attempt, timestamp). Web console
+  shows a "SOAR" tab under each alert with the delivery
+  history.
+
+**Done when:** triggering an `ssh_bruteforce` alert fires a
+formatted Slack message to a test channel within 2 seconds,
+the message has a working "View in ZaqorinCore" button,
+and the delivery is recorded in the audit log.
 
 ## Feedback
 

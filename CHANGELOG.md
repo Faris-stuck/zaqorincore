@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planning (v1.0.0 → v1.3.0)
+
+These features are designed but not implemented. The design
+docs (ADRs) and Slice 1 scaffolding ship in this revision;
+the runtime code lands in the next three feature releases.
+
+- **eBPF kernel telemetry** ([ADR-006](docs/decisions/ADR-006-ebpf-kernel-telemetry.md))
+  — closes the largest detection gap: kernel-vouched signal
+  for `execve`, `openat`, `connect`, `ptrace`, `setuid`. Un-
+  tamperable by userspace attackers. Falls back to file-tail
+  on older kernels. **Target: v1.1.0.**
+- **Multi-platform agents** ([ADR-007](docs/decisions/ADR-007-multi-platform-agents.md))
+  — Windows Event Log + ETW (opt-in) and macOS Endpoint
+  Security Framework. Same wire contract, same HMAC-signed
+  auto-response. 5x build matrix (linux/amd64, linux/arm64,
+  windows/amd64, darwin/amd64, darwin/arm64) already
+  compiles in v1.0.0. **Target: v1.2.0.**
+- **SOAR webhook delivery** ([ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md))
+  — six backends ship (generic webhook, Slack, Discord,
+  PagerDuty, TheHive, Jira) with dead-letter + replay.
+  Zero SaaS dependency. **Target: v1.3.0.**
+
+### Added (post-1.0.0 scaffolding)
+
+- `agent/internal/ebpf/` — Slice 1 stub backend, 5/5 cross-
+  platform GOOS builds, no behavior change on linux/amd64.
+- `agent/internal/telemetry/` + `telemetry.NewForPlatform`
+  dispatcher — `windows` and `darwin` branches return a
+  placeholder `Unavailable` backend that logs a one-time
+  warning.
+- `agent/internal/response/kinds/kill_unix.go` +
+  `kill_windows.go` — split via `//go:build` so all 5 GOOS
+  targets compile. The Windows variant uses
+  `OpenProcess` + `TerminateProcess`; the Unix variant uses
+  `syscall.Kill`.
+- `server/src/zaqorincore_server/soar/` — Slice 1 stub
+  package with `Backend` protocol, `Alert` dataclass,
+  `DeliveryResult` frozen dataclass, six `NotImplemented`
+  backends. `tests/test_soar_scaffold.py` proves the wire
+  is wired up. **5/5 server tests added (170 → 175).**
+- 3 new ADRs (`docs/decisions/ADR-006-008-*.md`) registered
+  in the mkdocs nav.
+
+### Notes
+
+- 175/175 server tests pass (170 + 5 SOAR scaffold).
+- 10/10 Go packages pass.
+- All 5 GOOS targets (linux/amd64, linux/arm64, windows/amd64,
+  windows/arm64, darwin/amd64, darwin/arm64) build cleanly.
+- 9/9 launch smoke + 9/9 live smoke still pass; no behavior
+  change on the v1.0.0 surface.
+
 ## [1.0.0] - 2026-08-28
 
 The first release considered **production-ready**. Every advertised
