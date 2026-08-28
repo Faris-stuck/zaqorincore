@@ -1,0 +1,113 @@
+# ZaqorinCore documentation site.
+#
+# Build:    mkdocs build           → ./site/
+# Serve:    mkdocs serve           → http://127.0.0.1:8001/
+# Deploy:   mkdocs gh-deploy       → gh-pages branch (manual; not wired in CI yet)
+#
+# This site is doc-only — the runtime (server + agent) does not depend on it.
+
+site_name: ZaqorinCore
+site_description: >-
+  Proactive defense for the people who run their own infrastructure.
+  Self-hosted detection + auto-response, MIT licensed, zero AI.
+site_url: https://zaqorincore.example.com/  # placeholder; update when domain is set
+repo_url: https://github.com/Faris-stuck/zaqorincore
+repo_name: Faris-stuck/zaqorincore
+edit_uri: edit/main/docs/
+
+# The PHASE*_PLAN.md files are internal scratchpads that accompanied
+# the phase implementations; they are not part of the public docs site.
+exclude_docs: |
+  PHASE*_PLAN.md
+  decisions/index.md
+
+theme:
+  name: material
+  palette:
+    # Dark-first: ZaqorinCore is a security tool and most operators
+    # run SOC dashboards at night.
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Operator guide: operator-guide.md
+  - Roadmap: roadmap.md
+  - Phases:
+      - Phase 1 — Agent: PHASE1.md
+      - Phase 2 — Server core: PHASE2.md
+      - Phase 3 — Detection: PHASE3.md
+      - Phase 4 — Auto-response: PHASE4.md
+      - Phase 5 — 3-tier runtime: PHASE5.md
+      - Phase 6 — 9 action kinds + Sigma: PHASE6.md
+      - Phase 7 — Deception + forensics: PHASE7.md
+      - Phase 8 — Compliance pack: PHASE8.md
+      - Phase 9 — Web console: PHASE9.md
+  - Decisions:
+      - ADR-001 scope: decisions/ADR-001-scope-universal-platform.md
+      - ADR-002 tiered config: decisions/ADR-002-multi-scale-tiered-config.md
+      - ADR-003 9 action kinds: decisions/ADR-003-action-kinds-nine-kinds.md
+      - ADR-004 Sigma engine: decisions/ADR-004-rule-engine-sigma-compatible.md
+      - ADR-005 deception/forensics: decisions/ADR-005-deception-forensics-zerocost.md
+  - Reference:
+      - Changelog: https://github.com/Faris-stuck/zaqorincore/blob/main/CHANGELOG.md
+      - Security policy: https://github.com/Faris-stuck/zaqorincore/blob/main/SECURITY.md
+      - Contributing: https://github.com/Faris-stuck/zaqorincore/blob/main/CONTRIBUTING.md
+      - Code of conduct: https://github.com/Faris-stuck/zaqorincore/blob/main/CODE_OF_CONDUCT.md
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Faris-stuck/zaqorincore
+      name: ZaqorinCore on GitHub
+  # "Built with mkdocs + Material for MkDocs" — kept honest; MIT-licensed
+  # upstream projects that we did not fork or rebrand.

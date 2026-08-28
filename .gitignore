@@ -107,3 +107,6 @@ temp/
 # --- Test fixtures that contain real data ---
 testdata/real/
 fixtures/real/
+
+# --- Docs build artifacts (mkdocs) ---
+site/

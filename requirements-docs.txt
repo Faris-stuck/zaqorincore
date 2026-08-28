@@ -1,0 +1,14 @@
+# Build deps for the docs site (https://www.mkdocs.org/).
+#
+# The docs site is OPTIONAL for running ZaqorinCore — the server and
+# agent do not depend on it. Install these only when you want to
+# build or preview the documentation locally:
+#
+#     pip install -r requirements-docs.txt
+#     mkdocs serve         # preview at http://127.0.0.1:8001/
+#     mkdocs build         # write static site to ./site/
+#     mkdocs gh-deploy     # push to the gh-pages branch
+#
+# Pinned to the versions verified against this repo.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
