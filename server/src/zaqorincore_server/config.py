@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     # Path to the TOML config. Resolved by the SOAR package.
     soar_config: str = "config/soar.toml"
 
+    # --- API auth (v1.3.0 IMP-1) ---
+    # Shared secret for the X-API-Key header. When unset (the
+    # default for dev), the SOAR endpoints are open and log
+    # a warning. In any non-dev deployment, set this to a
+    # random 32+ byte string. Operators can also set it to an
+    # empty string to explicitly disable auth (e.g. for
+    # trusted-network deployments); the server still emits a
+    # warning. Rotated by changing the env var and restarting
+    # the server — no clients have a long-lived token.
+    api_key: str = ""
+
 
 _settings: Settings | None = None
 
@@ -107,3 +118,10 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
     return _settings
+
+
+def reset_settings() -> None:
+    """Drop the cached singleton. Tests use this to pick up
+    ``monkeypatch.setenv`` changes between cases."""
+    global _settings
+    _settings = None

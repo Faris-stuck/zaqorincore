@@ -33,8 +33,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db import get_session
 from ...models.soar_delivery import SoarDelivery
+from ...security import require_api_key
 
-router = APIRouter(prefix="/api/v1/soar", tags=["soar"])
+router = APIRouter(
+    prefix="/api/v1/soar",
+    tags=["soar"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 # ─── Per-alert delivery list ─────────────────────────────────────
