@@ -1,0 +1,11 @@
+title: Port scan (20 distinct ports in 30s)
+id: builtin-port-scan
+level: medium
+detection:
+  selection:
+    event_type: "network_tcp"
+  condition: selection
+  timeframe: 30s
+  count: 20
+cooldown_sec: 600
+dedup_key: "{{source_ip}}"

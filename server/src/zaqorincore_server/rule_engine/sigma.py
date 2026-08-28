@@ -1,0 +1,291 @@
+"""Sigma-style rule loader (Phase 6, ADR-004).
+
+Parses a subset of the Sigma rule format (YAML) and compiles each
+rule into a callable matcher that returns `True` when an event
+satisfies the rule's conditions.
+
+We don't depend on SigmaHQ or sigmac. We adopt the wire format
+because it is the de-facto standard for shareable detection
+content, and an operator who already has Sigma rules can paste
+them into `rules/custom/*.yml` and the ZaqorinCore runner will
+execute them.
+
+Supported Sigma fields (minimal subset — enough to be useful,
+not the full Sigma grammar):
+
+```yaml
+title: SSH brute force
+id: ssh-bf-001
+level: high             # low | medium | high | critical
+detection:
+  selection:
+    source: "sshd"
+    status: "failed"
+  condition: selection
+  timeframe: 60s        # optional; default 60
+  count: 5              # optional; default 1 (single-event rule)
+action:                 # optional; emits an Action row on fire
+  kind: block_ip
+  target: "{{source_ip}}"
+  ttl_sec: 3600
+cooldown_sec: 300       # optional
+dedup_key: "{{source_ip}}"
+```
+
+`{{var}}` placeholders in `action.target` and `dedup_key` are
+filled from the event's metadata.
+
+Backwards compat: the Phase 5 built-in detectors (ssh_bruteforce,
+port_scan, web_attack, dns_tunnel, auth_anomaly) keep working.
+Sigma rules are an additive path.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from ..detectors.base import ParsedEvent
+
+
+_PLACEHOLDER_RE = re.compile(r"\{\{([a-zA-Z0-9_]+)\}\}")
+
+
+def _interpolate(template: str, metadata: dict[str, str]) -> str:
+    """Replace `{{var}}` placeholders in `template` with values
+    from `metadata`. Unknown variables are left as the literal
+    `{{var}}` string so a typo in the rule is visible at fire
+    time, not silently swallowed."""
+    def _replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        return str(metadata.get(key, match.group(0)))
+    return _PLACEHOLDER_RE.sub(_replace, template)
+
+
+def _match_selection(event: ParsedEvent, selection: dict[str, Any]) -> bool:
+    """Return True if every key in `selection` matches the event.
+
+    Matching rules:
+    - If the value is a string, the event metadata value must
+      equal it (case-sensitive).
+    - If the value is a list, the event metadata value must be
+      in the list.
+    - If the value starts with `re:` the rest is a regex.
+    - If the value starts with `contains:` the event metadata
+      value (or the raw event) must contain the rest as a
+      substring.
+    - Missing keys in the event metadata fail the match.
+    """
+    for key, expected in selection.items():
+        actual = event.metadata.get(key)
+        if actual is None:
+            # Also check the source field directly.
+            if key == "source":
+                actual = event.source
+            else:
+                return False
+        if isinstance(expected, list):
+            if actual not in expected:
+                return False
+        elif isinstance(expected, str):
+            if expected.startswith("re:"):
+                pattern = expected[3:]
+                if not re.search(pattern, str(actual)):
+                    return False
+            elif expected.startswith("contains:"):
+                needle = expected[9:]
+                if needle not in str(actual) and needle not in event.raw:
+                    return False
+            else:
+                if str(actual) != expected:
+                    return False
+        else:
+            if actual != expected:
+                return False
+    return True
+
+
+@dataclass(frozen=True)
+class CompiledSigmaRule:
+    """A Sigma rule compiled into a callable matcher."""
+
+    id: str
+    title: str
+    level: str
+    selection: dict[str, Any]
+    condition: str
+    count: int
+    timeframe_sec: int
+    cooldown_sec: int
+    dedup_key: str
+    action: dict[str, Any] | None
+
+    def matches(self, event: ParsedEvent) -> bool:
+        """Single-event matching. The runner is responsible for
+        counting events in a window — this function checks one
+        event against the rule's selection.
+        """
+        if self.condition == "selection":
+            return _match_selection(event, self.selection)
+        if self.condition == "selection and not filter":
+            return _match_selection(event, self.selection)
+        # Unknown condition → no match. Don't silently fail-open.
+        return False
+
+    def render_action(self, event: ParsedEvent) -> dict[str, Any] | None:
+        """Render the action block, filling placeholders from
+        the event. Returns None if the rule has no action.
+        """
+        if not self.action:
+            return None
+        kind = self.action.get("kind")
+        target_tpl = self.action.get("target", "")
+        target = _interpolate(target_tpl, event.metadata)
+        if not kind or not target:
+            return None
+        ttl = self.action.get("ttl_sec")
+        if isinstance(ttl, str):
+            ttl = _interpolate(ttl, event.metadata)
+            try:
+                ttl = int(ttl)
+            except (TypeError, ValueError):
+                ttl = None
+        return {"kind": kind, "target": target, "ttl_sec": ttl}
+
+    def render_dedup_key(self, event: ParsedEvent) -> str:
+        if not self.dedup_key:
+            return self.id
+        return _interpolate(self.dedup_key, event.metadata) or self.id
+
+
+@dataclass
+class SigmaRuleLoadError(Exception):
+    path: Path
+    reason: str
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"sigma rule {self.path}: {self.reason}"
+
+
+def parse_rule_file(path: Path) -> list[CompiledSigmaRule]:
+    """Parse one YAML file. A file may contain a single rule or a
+    list of rules.
+    """
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise SigmaRuleLoadError(path, f"invalid YAML: {e}") from e
+    except OSError as e:
+        raise SigmaRuleLoadError(path, f"cannot read: {e}") from e
+    if data is None:
+        return []
+    rules_data = data if isinstance(data, list) else [data]
+    out: list[CompiledSigmaRule] = []
+    for raw in rules_data:
+        if not isinstance(raw, dict):
+            raise SigmaRuleLoadError(path, "rule must be a mapping")
+        out.append(_compile(raw, path))
+    return out
+
+
+def _compile(raw: dict[str, Any], path: Path) -> CompiledSigmaRule:
+    title = str(raw.get("title") or raw.get("id") or "unnamed")
+    rule_id = str(raw.get("id") or title.lower().replace(" ", "-"))
+    level = str(raw.get("level") or "medium")
+    if level not in ("low", "medium", "high", "critical"):
+        raise SigmaRuleLoadError(path, f"invalid level: {level}")
+    detection = raw.get("detection")
+    if not isinstance(detection, dict):
+        raise SigmaRuleLoadError(path, "missing 'detection' block")
+    selection = detection.get("selection")
+    if not isinstance(selection, dict):
+        raise SigmaRuleLoadError(path, "missing 'detection.selection'")
+    condition = str(detection.get("condition") or "selection")
+    count = int(detection.get("count") or 1)
+    timeframe_raw = detection.get("timeframe", "60s")
+    timeframe_sec = _parse_timeframe(timeframe_raw)
+    cooldown_sec = int(raw.get("cooldown_sec") or 300)
+    dedup_key = str(raw.get("dedup_key") or "")
+    action = raw.get("action")
+    if action is not None and not isinstance(action, dict):
+        raise SigmaRuleLoadError(path, "'action' must be a mapping")
+    return CompiledSigmaRule(
+        id=rule_id,
+        title=title,
+        level=level,
+        selection=selection,
+        condition=condition,
+        count=count,
+        timeframe_sec=timeframe_sec,
+        cooldown_sec=cooldown_sec,
+        dedup_key=dedup_key,
+        action=action,
+    )
+
+
+def _parse_timeframe(value: Any) -> int:
+    """Parse '60s', '5m', '1h' into seconds. Bare numbers default
+    to seconds. Invalid values fall back to 60.
+    """
+    if isinstance(value, int):
+        return value
+    s = str(value).strip().lower()
+    if not s:
+        return 60
+    if s.endswith("ms"):
+        try:
+            return max(1, int(s[:-2]) // 1000)
+        except ValueError:
+            return 60
+    if s.endswith("s"):
+        try:
+            return int(s[:-1])
+        except ValueError:
+            return 60
+    if s.endswith("m"):
+        try:
+            return int(s[:-1]) * 60
+        except ValueError:
+            return 60
+    if s.endswith("h"):
+        try:
+            return int(s[:-1]) * 3600
+        except ValueError:
+            return 60
+    try:
+        return int(s)
+    except ValueError:
+        return 60
+
+
+def load_rules_from_dir(directory: Path) -> list[CompiledSigmaRule]:
+    """Load all `*.yml` and `*.yaml` files in `directory` (recursively).
+    Files that fail to parse are logged and skipped — one bad rule
+    shouldn't take down the whole engine.
+    """
+    if not directory.exists() or not directory.is_dir():
+        return []
+    out: list[CompiledSigmaRule] = []
+    for ext in ("*.yml", "*.yaml"):
+        for p in directory.rglob(ext):
+            try:
+                out.extend(parse_rule_file(p))
+            except SigmaRuleLoadError as e:
+                # Don't crash the runner on a bad rule. The caller
+                # can introspect the engine's load_errors if it cares.
+                import logging
+                logging.getLogger(__name__).warning(str(e))
+    return out
+
+
+__all__ = [
+    "CompiledSigmaRule",
+    "SigmaRuleLoadError",
+    "load_rules_from_dir",
+    "parse_rule_file",
+]

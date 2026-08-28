@@ -1,0 +1,16 @@
+title: SSH brute force (5 failed logins in 60s)
+id: builtin-ssh-bruteforce
+level: high
+detection:
+  selection:
+    source: "sshd"
+    status: "failed"
+  condition: selection
+  timeframe: 60s
+  count: 5
+action:
+  kind: block_ip
+  target: "{{source_ip}}"
+  ttl_sec: 3600
+cooldown_sec: 300
+dedup_key: "{{source_ip}}"

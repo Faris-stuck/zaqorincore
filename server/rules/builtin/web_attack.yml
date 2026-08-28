@@ -1,0 +1,10 @@
+title: Web attack (SQLi / XSS / traversal pattern in URL)
+id: builtin-web-attack
+level: high
+detection:
+  selection:
+    event_type: "http_request"
+    url: 're:(\bunion\b.*\bselect\b|<script\b|\.\./\.\./)'
+  condition: selection
+cooldown_sec: 600
+dedup_key: "{{source_ip}}"

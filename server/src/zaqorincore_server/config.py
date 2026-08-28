@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     # for homelab users; enterprise is for multi-node clusters.
     deployment_mode: str = "startup"
 
+    # --- Sigma rule engine (Phase 6, ADR-004) ---
+    # Directory where Sigma-compatible rule YAML files are loaded
+    # at runner startup. Operators can drop new rules in here and
+    # they take effect on next server start. Builtin rules ship
+    # under `rules/builtin/` next to the package.
+    rules_dir: str = "rules/builtin"
+
 
 _settings: Settings | None = None
 

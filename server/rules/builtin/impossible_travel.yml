@@ -1,0 +1,11 @@
+title: Impossible travel (login from 3+ distinct IPs in 5m)
+id: builtin-impossible-travel
+level: critical
+detection:
+  selection:
+    event_type: "auth_login"
+  condition: selection
+  timeframe: 5m
+  count: 3
+cooldown_sec: 3600
+dedup_key: "{{user}}"

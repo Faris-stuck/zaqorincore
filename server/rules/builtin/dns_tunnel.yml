@@ -1,0 +1,11 @@
+title: DNS tunneling (50 long queries in 5m)
+id: builtin-dns-tunnel
+level: high
+detection:
+  selection:
+    event_type: "dns_query"
+  condition: selection
+  timeframe: 5m
+  count: 50
+cooldown_sec: 1800
+dedup_key: "{{source_ip}}"

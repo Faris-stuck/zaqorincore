@@ -198,6 +198,54 @@ async def _process_one(
     await redis.xack(ctx.settings.stream_name, ctx.settings.stream_group, msg_id)
 
 
+async def _process_sigma_one(
+    msg_id: str,
+    fields: dict[str, str],
+    ctx: DetectorContext,
+    session_factory: async_sessionmaker[Any],
+    redis: aioredis.Redis,
+) -> None:
+    """Phase 6: run Sigma rules against one event and persist
+    any fires as alerts + actions. Mirrors _process_one but
+    uses the rule engine instead of Python detector plugins.
+    """
+    parsed = _parse_event(fields)
+    if parsed is None:
+        return
+    payload = await _load_event_payload(session_factory, parsed.event_id)
+    if payload is None:
+        return
+    raw, meta = payload
+    parsed = ParsedEvent(
+        event_id=parsed.event_id,
+        host_id=parsed.host_id,
+        source=parsed.source,
+        raw=raw,
+        metadata=meta,
+        occurred_at=parsed.occurred_at,
+    )
+
+    from ..rule_engine import SigmaRuleRunner, persist_fire
+    from ..rule_engine.sigma import load_rules_from_dir
+
+    rules_dir = ctx.settings.rules_dir
+    rules = load_rules_from_dir(rules_dir)
+    if not rules:
+        return
+    sigma_runner = SigmaRuleRunner(redis, rules)
+    fires = await sigma_runner.evaluate(parsed)
+    for fire in fires:
+        try:
+            async with session_factory() as session:
+                await persist_fire(session, fire)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "sigma fire persist failed",
+                extra={"rule": fire.rule.id, "err": str(exc)},
+            )
+
+
 async def run() -> None:
     """Main consumer loop. Runs until cancelled."""
     settings: Settings = _settings()  # type: ignore[name-defined]
@@ -267,6 +315,14 @@ async def run() -> None:
                         msg_id,
                         fields,
                         BUILTIN_DETECTORS,
+                        ctx,
+                        session_factory,
+                        redis,
+                    )
+                    # Phase 6: also evaluate Sigma rules.
+                    await _process_sigma_one(
+                        msg_id,
+                        fields,
                         ctx,
                         session_factory,
                         redis,
