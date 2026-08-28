@@ -1,0 +1,38 @@
+title: Web shell exec (eBPF execve from web server)
+id: builtin-ebpf-execve-webshell
+level: critical
+description: |
+  Detects a process exec from a web server's child (parent
+  is the web server's master process) where argv[0] is a
+  shell interpreter. This is the canonical "the attacker
+  dropped a .php that called /bin/sh" pattern, ATT&CK
+  T1505.003 (Web Shell) and T1059 (Command and Scripting
+  Interpreter). The rule is only matched by events produced
+  by the eBPF execve probe (see ADR-006) — file-tail
+  sources cannot observe the parent_comm/argv relationship
+  with the same fidelity.
+tags:
+  - attack.t1505.003
+  - attack.t1059
+  - compliance.iso27001.A5.7
+  - compliance.pci_dss.req6
+references:
+  - https://attack.mitre.org/techniques/T1505/003/
+  - https://attack.mitre.org/techniques/T1059/
+  - docs/decisions/ADR-006-ebpf-kernel-telemetry.md
+detection:
+  selection:
+    source: "ebpf/execve"
+    argv0:
+      - "contains:/sh"
+      - "contains:sh"
+    parent_comm: "nginx"
+  condition: selection
+  timeframe: 60s
+  count: 1
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 300
+dedup_key: "{{comm}}:{{argv0}}"

@@ -1,15 +1,19 @@
 // Package ebpf holds the eBPF kernel-telemetry backend for the
-// ZaqorinCore agent (v1.1 — see ADR-006).
+// ZaqorinCore agent (v1.1.0, see ADR-006).
 //
-// This file is the scaffolding shipped in Slice 1 (v1.0.0 → v1.1.0).
-// It compiles, runs, and reports "BPF backend not built" so the
-// rest of the agent continues to work unchanged. Slices 2-5
-// (v1.1.0+) replace this body with real probe loaders.
+// This file is the public-facing Backend interface used by
+// app.Run. The implementation is either the real BPF loader
+// (loader.go) when the kernel is new enough, the compiled
+// objects are present, and CAP_BPF is available — or the
+// Slice 1 NotImplemented stub that logs once and returns.
+//
+// Both implementations satisfy the Backend interface below.
 package ebpf
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 )
 
@@ -34,27 +38,47 @@ type Backend interface {
 //     and is what the probes use)
 //   - the bpf() syscall is available (parses /proc/sys/kernel/unprivileged_bpf
 //     and CAP_BPF on the agent's creds)
-//   - cilium/ebpf is linked into the binary
+//   - the compiled .o files are present at the expected path
 //
-// In Slice 1 we report "not available" unconditionally because
-// the probe objects are not built yet. Slices 2+ swap this for
-// real syscalls.
+// When Availability returns false the agent uses the
+// file-tail backend unchanged. The reason is logged so
+// operators can fix the most common case (missing compiled
+// objects) with a single `make ebpf` invocation.
 func Availability() (available bool, kernelMajor, kernelMinor int, err error) {
-	// Scaffold: probes are not built yet. Always unavailable.
-	// Real implementation (Slice 2) uses unix.Kernel() to read
-	// /proc/version and unix.PrctlRetInt to probe CAP_BPF.
-	return false, 0, 0, fmt.Errorf("ebpf: probe binaries not built in this release; " +
-		"file-tail backend in use (see ADR-006 Slice 1)")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	_, reason := NewReal(logger, LoadConfig{})
+	if reason == "" {
+		return true, 0, 0, nil
+	}
+	return false, 0, 0, fmt.Errorf("ebpf: %s", reason)
 }
 
-// NotImplemented is the Backend returned to the agent for v1.0.0.
-// It logs a one-time warning and returns immediately. The agent
+// NewBackend returns the most capable Backend the current
+// process can construct. It is the entry point used by
+// main.go: try the real loader first, fall back to the
+// NotImplemented stub if anything is missing.
+func NewBackend(logger *slog.Logger, cfg LoadConfig) Backend {
+	if real, reason := NewReal(logger, cfg); reason == "" {
+		logger.Info("ebpf: BPF backend active",
+			slog.String("host_id", cfg.AgentID))
+		return real
+	} else {
+		logger.Warn("ebpf: BPF backend unavailable, using file-tail",
+			slog.String("reason", reason))
+		return NewNotImplemented(logger)
+	}
+}
+
+// NotImplemented is the Backend returned to the agent for
+// hosts where the BPF backend is unavailable. It logs a
+// one-time warning and returns immediately. The agent
 // continues with the existing file-tail backend.
 type NotImplemented struct {
 	logger *slog.Logger
 }
 
-// NewNotImplemented is the constructor used by app.go.
+// NewNotImplemented is the constructor used by NewBackend
+// when the real loader declines to initialise.
 func NewNotImplemented(logger *slog.Logger) *NotImplemented {
 	return &NotImplemented{logger: logger}
 }
@@ -67,8 +91,9 @@ func (n *NotImplemented) Name() string {
 // Run implements Backend. It logs the scaffold status and blocks
 // until ctx is canceled, doing no work in the meantime.
 func (n *NotImplemented) Run(ctx context.Context, handler func(event []byte) error) error {
-	n.logger.Warn("ebpf: kernel telemetry backend not built in this release; " +
-		"using file-tail backend only. See ADR-006 for the v1.1 plan.")
+	n.logger.Warn("ebpf: kernel telemetry backend not active; " +
+		"using file-tail backend only. See ADR-006 / docs/PHASE11.md " +
+		"for the v1.1.0 deployment guide.")
 	<-ctx.Done()
 	return ctx.Err()
 }
