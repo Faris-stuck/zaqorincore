@@ -59,6 +59,54 @@ the runtime code lands in the next three feature releases.
 - 9/9 launch smoke + 9/9 live smoke still pass; no behavior
   change on the v1.0.0 surface.
 
+### Added (v1.3.0 SOAR implementation)
+
+- **Six SOAR backends** with pluggable registry
+  (`server/src/zaqorincore_server/soar/backends/`):
+  - `generic_webhook` — template body, custom auth header
+  - `slack` — Block Kit message
+  - `discord` — webhook embed
+  - `pagerduty` — Events API v2 enqueue
+  - `thehive` — case creation via API
+  - `jira` — issue creation via REST v3
+- **Worker dispatch loop** (`worker.py`):
+  - `asyncio.Queue` bounded delivery, semaphore 10, configurable
+    per-backend max retries with exponential backoff
+    (1s → 5s → 25s → 125s → 625s)
+  - Per-`(backend, host, detector)` cooldown tracker
+  - Atomic dead-letter JSON write with SHA-256 integrity hash
+  - Replay endpoint validates SHA on read
+- **REST surface** (`api/v1/soar.py`):
+  - `GET /api/v1/soar/deliveries` — paginated history
+  - `GET /api/v1/soar/health` — 24h aggregate per backend
+  - `GET /api/v1/soar/dead-letter` — list files newest first
+  - `GET /api/v1/soar/dead-letter/{file_id}` — read single
+  - `POST /api/v1/soar/dead-letter/{file_id}/replay` — re-enqueue
+- **`soar_deliveries` table** (Alembic migration 0003):
+  - 9 columns, 2 indexes; one row per delivery attempt
+- **`docs/PHASE13-soar.md`** — 740-line operator guide covering
+  configuration, architecture, dead-letter recovery, replay,
+  troubleshooting, and the test coverage summary
+- **2 Cybersec review fixes** (Important, pre-v1.3.0):
+  - IMP-3: dead-letter files now written with mode 0o600
+    (owner-only) via `os.open(O_WRONLY|O_CREAT|O_TRUNC, 0o600)`
+  - IMP-4: dropped-on-queue-full alerts are now written to
+    the dead-letter store via a new `_dead_letter_queue_full`
+    helper instead of being silently lost
+
+### Notes (post-v1.3.0 IMP work)
+- **229/229 server tests pass** (227 → +2 for IMP-3/4)
+- 10/10 Go packages pass (unchanged)
+- 9/9 launch smoke + 9/9 live smoke pass
+- **IMP-1 + IMP-2 remain open** for the v1.3.0 release tag:
+  - IMP-1: 5 SOAR API endpoints have no auth (needs
+    architecture decision: API key header vs session vs mTLS)
+  - IMP-2: auth header logging footgun (doc comment + ops
+    warning, not a code bug)
+- Cybersec review full output: see the Cybersec review
+  section in the project's Obsidian vault note
+  `Proyek - Cyber Sentinel ZaqorinCore.md`.
+
 ## [1.0.0] - 2026-08-28
 
 The first release considered **production-ready**. Every advertised
