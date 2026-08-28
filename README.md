@@ -96,15 +96,22 @@ Phase 2 adds the server that consumes it. Details in
 
 | Phase | What ships | Status |
 |---|---|---|
-| **0** | Spec, repo scaffolding, governance files | ✅ Shipped (v0.0.0) |
 | **1** | Go agent — log tailer, WebSocket push, systemd | ✅ Shipped (v0.1.0) |
-| **2** | Central server (FastAPI + PostgreSQL + Redis) | ⏳ Next |
-| **3** | Detector plugin: SSH brute-force | ⏳ |
-| **4** | Auto-response: agent-side `iptables` block + HMAC | ⏳ |
-| **5** | Detectors: web attack, network scan, C2 beaconing | ⏳ |
-| **6** | Auth + multi-user + RBAC | ⏳ |
-| **7** | Packaging: Docker compose + Helm + install scripts | ⏳ |
-| **8** | Public launch + docs site | ⏳ |
+| **2** | Central server (FastAPI + PostgreSQL + Redis) | ✅ Shipped (v0.2.0) |
+| **3** | Detector plugin: SSH brute-force | ✅ Shipped (v0.3.0) |
+| **4** | Auto-response: agent-side nftables block + HMAC | ✅ Shipped (v0.4.0) |
+| **5** | 3-tier runtime (home / SMB / enterprise) | ✅ Shipped (v0.5.0) |
+| **6** | 9 action kinds + Sigma-compatible rule engine | ✅ Shipped (v0.6.0) |
+| **7** | Deception (4 canary kinds) + evidence locker (HMAC + SHA-256, key rotation) | ✅ Shipped (v0.7.0) |
+| **8** | Compliance pack — 51 rules across 4 frameworks (ISO 27001, NIST 800-53, PCI DSS 4.0, UU PDP) + MITRE ATT&CK | ✅ Shipped (v0.8.0) |
+| **9** | Web console (alerts / hunt / evidence / canary) | ✅ Shipped (v0.9.0) |
+| **10** | Docs site + launch smoke + HN post | ✅ Shipped (v1.0.0) |
+
+**v1.0.0 is the first production-ready release.** 170/170 server
+tests pass. 10/10 Go packages pass. 9/9 launch smoke checks pass.
+See [`docs/operator-guide.md`](./docs/operator-guide.md) and the
+live docs site at
+`https://faris-stuck.github.io/zaqorincore/`.
 
 Full plan in [`ROADMAP.md`](./ROADMAP.md). Per-phase change log in [`CHANGELOG.md`](./CHANGELOG.md).
 

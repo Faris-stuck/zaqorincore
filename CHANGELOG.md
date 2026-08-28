@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-28
+
+The first release considered **production-ready**. Every advertised
+feature in the README is implemented, tested, and documented.
+
+### Added
+
+- **Docs site** (`https://faris-stuck.github.io/zaqorincore/`) —
+  mkdocs + material theme, dark/light toggle, full-text search.
+  Includes landing page, operator guide, 9 phase docs, 5 ADRs,
+  roadmap, and 5-minute demo walkthrough.
+- **DB-free launch smoke** (`server/scripts/smoke_launch.py`) —
+  9 checks, runs in under a second, no docker/env required. Pairs
+  with the live-stack smoke (`scripts/smoke.sh`) for end-to-end
+  coverage.
+- **5-minute demo walkthrough** (`docs/DEMO.md`) — scripted
+  security-team demo covering the SPA, smoke, canary, compliance
+  packs, and evidence locker.
+- **HN launch post** (`docs/HN-LAUNCH.md`) — submission-ready text
+  plus submitter notes (timing, cross-post, first-comment prep).
+
+### Notes
+
+- 170/170 server tests pass. 10/10 Go packages pass. 9/9 launch
+  smoke checks pass. 9/9 live smoke checks pass.
+- Zero known P0 bugs. Known limitations (no auth UI, CSP still
+  allows `https://esm.sh`) are documented in `docs/PHASE9.md` and
+  tracked in `ROADMAP.md` for v1.x.
+- License: **MIT**. No SaaS, no telemetry, no per-seat, no
+  per-host. The binary you build is the binary you run.
+- "AI" / "ML" / "LLM" do not appear in the code, the docs, or
+  the branding. The product is 100% rule-based and proud of it.
+
 ## [0.9.0] - 2026-08-28
 
 ### Added
@@ -231,7 +264,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unit, TOML config, `make build` for linux/amd64 + linux/arm64.
 - **End-to-end smoke** (`scripts/smoke.sh`).
 
-[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.9.0...v1.0.0
+[0.9.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.3.0...v0.4.0
