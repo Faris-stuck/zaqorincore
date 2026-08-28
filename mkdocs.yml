@@ -98,6 +98,7 @@ nav:
       - ADR-004 Sigma engine: decisions/ADR-004-rule-engine-sigma-compatible.md
       - ADR-005 deception/forensics: decisions/ADR-005-deception-forensics-zerocost.md
   - Reference:
+      - 5-min demo: DEMO.md
       - Changelog: https://github.com/Faris-stuck/zaqorincore/blob/main/CHANGELOG.md
       - Security policy: https://github.com/Faris-stuck/zaqorincore/blob/main/SECURITY.md
       - Contributing: https://github.com/Faris-stuck/zaqorincore/blob/main/CONTRIBUTING.md
