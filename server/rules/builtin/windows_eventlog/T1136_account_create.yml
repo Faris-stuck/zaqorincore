@@ -45,6 +45,8 @@ references:
   - https://attack.mitre.org/techniques/T1136/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4720
 level: high
+required_fields:
+  - metadata.hour
 detection:
   selection:
     source: "windows.security.4720"
