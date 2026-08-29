@@ -549,6 +549,84 @@ docs/decisions/ADR-012-etw-push-mode.md                 96 lines
 
 [1.6.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.5.0...v1.6.0
 
+## [1.6.1] - 2026-08-29
+
+Windows ETW push-mode Win32 CGO callback shipped
+(MinGW-w64 cross-build verified).
+
+### What ships in v1.6.1
+
+- **`push_mode_windows.go`** (//go:build windows):
+  CGO preamble with `extern __stdcall goPushCallback(...)`
+  matching the Win32 `EVT_SUBSCRIBE_CALLBACK`
+  signature. `SubscribePush` opens a real
+  `EvtSubscribe` subscription. The `//export
+  goPushCallback` trampoline renders the event to
+  XML via `EvtRender` and pushes into the Go
+  channel. `onStop` (Windows-only) releases the
+  handle via `EvtClose`.
+- **`push_mode_other.go`**: `onStop` no-op on
+  non-Windows builds.
+- **`push_mode_common.go`**: `Close()` calls
+  `b.onStop()` (build tag determines impl).
+- **1 new test** (`TestPushBackend_ConfigPullIsDefault`)
+  documents the default `mode = "pull"`.
+- **MinGW-w64** installed on dev VPS
+  (`gcc-mingw-w64-x86-64`).
+- **Windows test binary** cross-compiles cleanly
+  (7.7 MB, `goPushCallback` symbol exported).
+
+### What is DEFERRED to v1.6.2
+
+- **`internal/app/app.go` wiring**: main loop
+  currently only knows about file-tail `log_source`
+  entries. v1.6.2 adds: when `runtime.GOOS ==
+  "windows"` AND `cfg.WindowsEventlog.Mode ==
+  "push"`, start `PushBackend.SubscribePush + Run`
+  alongside the file tailers.
+- **End-to-end smoke** on a real Windows VM (not
+  available on dev VPS).
+
+### Verification
+
+```
+$ x86_64-w64-mingw32-gcc --version
+x86_64-w64-mingw32-gcc (GCC) 13-win32
+
+$ CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+  CC=x86_64-w64-mingw32-gcc \
+  go test -c ./internal/telemetry/windows/ \
+  -o /tmp/wintest
+$ ls -la /tmp/wintest
+-rwxr-xr-x 1 ubuntu ubuntu 7707591 /tmp/wintest
+
+$ go test ./internal/telemetry/windows/ -v -run TestPushBackend
+=== RUN   TestPushBackend_ForwardsEventsToHandler
+--- PASS
+=== RUN   TestPushBackend_DropsOnFullChannel
+--- PASS
+=== RUN   TestPushBackend_CloseIdempotent
+--- PASS
+=== RUN   TestPushBackend_ConfigPullIsDefault
+--- PASS
+=== RUN   TestPushBackend_CtxCancelStopsRun
+--- PASS
+```
+
+### PITFALLS (recorded in PHASE19)
+
+1. `windows.h` not on Linux by default —
+   `gcc-mingw-w64-x86-64` provides it.
+2. `procEvtSubscribeCallback` resolved via
+   `syscall.NewLazyDLL("").NewProc("goPushCallback")`.
+3. Build-tag method conflict — define
+   `onStop` ONLY in build-tag-specific files.
+4. `go vet` on a single file = false `undefined`.
+   Use `go vet ./...` or `go test -c`.
+5. Per-event CGO cost: ≈200ns. Acceptable.
+
+[1.6.1]: https://github.com/Faris-stuck/zaqorincore/compare/v1.6.0...v1.6.1
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release

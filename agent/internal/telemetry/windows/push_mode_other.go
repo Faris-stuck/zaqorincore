@@ -18,3 +18,8 @@ import (
 func (b *PushBackend) SubscribePush(_ context.Context, _ *slog.Logger) error {
 	return fmt.Errorf("eventlog-push: not supported on this platform (build tag: windows required)")
 }
+
+// onStop is a no-op on non-Windows builds (the
+// Windows build in push_mode_windows.go releases
+// the EvtSubscribe handle).
+func (b *PushBackend) onStop() {}

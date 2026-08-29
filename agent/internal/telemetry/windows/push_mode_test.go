@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Faris-stuck/zaqorincore/agent/internal/config"
 )
 
 // newTestBackend returns a PushBackend with a small
@@ -95,6 +97,19 @@ func TestPushBackend_CloseIdempotent(t *testing.T) {
 		// ok
 	default:
 		t.Errorf("done channel was not closed")
+	}
+}
+
+func TestPushBackend_ConfigPullIsDefault(t *testing.T) {
+	// The wiring in main.go (TODO v1.6.2) will read
+	// cfg.WindowsEventlog.Mode and choose between
+	// New() (pull, default) and NewPush() (push,
+	// v1.6.1+). For now, this test documents the
+	// contract: default mode = pull. If the default
+	// changes, this test fails loud.
+	cfg := config.Defaults()
+	if cfg.WindowsEventlog.Mode != "pull" {
+		t.Errorf("default windows_eventlog.mode = %q, want pull", cfg.WindowsEventlog.Mode)
 	}
 }
 

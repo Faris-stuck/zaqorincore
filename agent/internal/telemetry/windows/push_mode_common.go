@@ -131,7 +131,21 @@ func (b *PushBackend) Push(ev PushEvent) {
 	}
 }
 
-// Close stops the backend. Idempotent.
+// closeHandle returns the current Win32 handle and
+// resets it. The Windows-only build of Close (in
+// push_mode_windows.go) calls EvtClose on the result.
+// On non-Windows builds there is no handle to close,
+// so the helper returns 0.
+func (b *PushBackend) closeHandle() uintptr {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h := b.handle
+	b.handle = 0
+	return h
+}
+
+// Close stops the backend and releases the Win32
+// subscription handle. Idempotent.
 func (b *PushBackend) Close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -139,5 +153,12 @@ func (b *PushBackend) Close() {
 		return
 	}
 	b.stopped = true
+	b.onStop()
 	close(b.done)
 }
+
+// onStop is implemented in the build-tag-specific
+// files: push_mode_windows.go for Windows (releases
+// the EvtSubscribe handle) and push_mode_other.go
+// for non-Windows (no-op).
+//
