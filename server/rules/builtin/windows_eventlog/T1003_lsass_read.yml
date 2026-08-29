@@ -1,0 +1,45 @@
+title: Windows LSASS process access (credential dump)
+id: builtin-windows-lsass-read
+description: |
+  Detects a process that opens a handle to lsass.exe
+  (the Local Security Authority Subsystem Service). The
+  Windows agent surfaces LSASS handle opens as Event ID
+  4663 (kernel audit: file object access) when the
+  process-access auditing subcategory is enabled. The
+  rule matches on the target filename ending in
+  `lsass.exe`. This is the Windows analog of the
+  `T1003_credential_dump` rule that already detects
+  /proc/*/mem opens targeting lsass on Linux.
+
+  Implementation note: the 4663 event is produced by
+  the kernel audit subsystem, not by the Windows agent's
+  default eventlog subscription (which covers 4624,
+  4625, 4688, 4698, 4720, 4732). Operators must enable
+  the "Audit Handle to Kernel Objects" subcategory via
+  Group Policy for the agent to receive these events.
+
+  Mapping:
+    ATT&CK T1003.001 (LSASS Memory)
+    ATT&CK T1003 (OS Credential Dumping)
+    PCI DSS 8.2.3 (Strong cryptography for credentials)
+    ISO 27001 A.8.5 (Secure authentication)
+tags:
+  - attack.t1003.001
+  - attack.credential_access
+  - compliance.pci_dss.req8
+  - compliance.iso27001.A8.5
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4663
+level: critical
+detection:
+  selection:
+    source: "windows.security.4663"
+    target_filename: 'contains:lsass.exe'
+  condition: selection
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 600
+dedup_key: "{{pid}}:{{target_filename}}"

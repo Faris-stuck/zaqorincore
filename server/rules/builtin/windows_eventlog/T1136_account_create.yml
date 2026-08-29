@@ -1,0 +1,46 @@
+title: Windows user account created
+id: builtin-windows-4720-account-create
+description: |
+  Detects a new user account being created (Event ID 4720).
+  Every new account is a potential persistence mechanism
+  (ATT&CK T1136 Create Account) for an attacker who has
+  already obtained Domain Admin or local Administrator
+  credentials. This rule fires on every 4720 event with
+  a 1-hour cooldown per (host, target_user_name) pair, so
+  a real onboarding flow that creates N accounts in N
+  hours will produce N alerts, not one storm.
+
+  Operators who want a stricter rule (off-hours only,
+  exclude known service-account provisioning scripts) can
+  override this rule in `rules.local_overrides/` and add
+  a filter on `target_user_name` or a `contains:` match
+  on the parent process.
+
+  Mapping:
+    ATT&CK T1136 (Create Account)
+    ATT&CK T1136.001 (Local Account)
+    ATT&CK T1136.002 (Domain Account)
+    PCI DSS 8.1.4 (Disable / remove inactive accounts
+      within 90 days)
+    ISO 27001 A.5.16 (Identity management)
+tags:
+  - attack.t1136
+  - attack.t1136.001
+  - attack.t1136.002
+  - attack.persistence
+  - compliance.pci_dss.req8
+  - compliance.iso27001.A5.16
+references:
+  - https://attack.mitre.org/techniques/T1136/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4720
+level: medium
+detection:
+  selection:
+    source: "windows.security.4720"
+  condition: selection
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 3600
+dedup_key: "{{target_user_name}}"

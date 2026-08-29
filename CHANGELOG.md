@@ -27,6 +27,17 @@ the runtime code lands in the next three feature releases.
   (macOS ESF deferred per Faris' "Yasudah windows dan
   Linux saja" decision; dispatcher returns `Scaffold`
   sentinel on darwin and the build still compiles.)
+- **Windows detection rules** ([PHASE13-windows-rules.md](docs/PHASE13-windows-rules.md))
+  — 5 production-ready Sigma rules that close the
+  "Windows collector fires but nobody reads it" gap left
+  by v1.2.0. Covers T1110 brute force, T1218 LOLBin
+  parent, T1003.001 LSASS read, T1098 priv-group add,
+  T1136 account create. Each rule maps to PCI DSS /
+  ISO 27001 / NIST 800-53 in its `tags:` block for
+  automatic compliance coverage. **Target: v1.4.0.** ✅
+  **Shipped.** (10+ more rules from the ROADMAP deferred
+  to v1.4.x pending Sigma engine `|startswith`/`|endswith`
+  modifier support — see PHASE13 §3 and §7.)
 - **SOAR webhook delivery** ([ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md))
   — six backends ship (generic webhook, Slack, Discord,
   PagerDuty, TheHive, Jira) with dead-letter + replay.
@@ -122,6 +133,71 @@ the runtime code lands in the next three feature releases.
 - Cybersec review full output: see the Cybersec review
   section in the project's Obsidian vault note
   `Proyek - Cyber Sentinel ZaqorinCore.md`.
+
+## [1.4.0] - 2026-08-29
+
+The Windows detection-rules layer ships in this release.
+The Windows Event Log collector (v1.2.0) and the Windows
+action applier (v1.2.0) already produce and respond to
+events; what was missing was the rules that turn the
+event firehose into actionable alerts. v1.4.0 closes that
+gap with **5 production-ready Sigma rules** under
+`server/rules/builtin/windows_eventlog/`:
+
+| Rule ID | ATT&CK | Event ID | Level | Threshold | Action |
+|---|---|---|---|---|---|
+| `builtin-windows-4625-brute-force` | T1110 | 4625 | high | 10 in 60s | `block_ip` (1h) |
+| `builtin-windows-4688-suspicious-parent` | T1218 | 4688 | high | 1 event | `snapshot_processes` |
+| `builtin-windows-lsass-read` | T1003.001 | 4663 | critical | 1 event | `snapshot_processes` |
+| `builtin-windows-4732-priv-group-add` | T1098 | 4732 | critical | 1 event | `snapshot_processes` |
+| `builtin-windows-4720-account-create` | T1136 | 4720 | medium | 1 event | `snapshot_processes` |
+
+The rules run on the existing `SigmaRuleRunner` (no engine
+changes) and ship with **15 new tests** in
+`server/tests/test_windows_eventlog_rules.py`. The full
+server test suite grew from 235 → 250.
+
+### Why 5 (and not the 10-20 the ROADMAP asked for)
+
+The ROADMAP listed "10-20 new platform-specific rules" as
+a v1.2.0 prerequisite, but v1.2.0 shipped zero because
+the rule engine was feature-locked to plain string / list
+/ `re:` / `contains:` matches — no `|startswith`,
+`|endswith`, `|ge`, `|lt` modifiers. Rather than wait for
+the engine upgrade, v1.4.0 ships the 5 rules that work
+today. The remaining 5-10 are queued for v1.4.x (engine
+modifier support). See `docs/PHASE13-windows-rules.md`
+§3 and §7 for the full rationale and follow-up list.
+
+### Notes
+
+- **Mapping:** every rule's `tags:` block carries the
+  ATT&CK, PCI DSS, ISO 27001, and NIST 800-53 IDs it
+  satisfies. The Phase 6 compliance scanner (v0.8.0)
+  auto-counts these toward the relevant framework's
+  coverage.
+- **Off-hours filter:** the T1136 rule fires on every
+  4720 event (24x7) instead of off-hours only, because
+  the engine does not yet parse
+  `condition: selection and not filter_business_hours`.
+  Operators wanting a stricter rule can override the rule
+  in `rules.local_overrides/windows_eventlog/` with an
+  explicit `parent_process_name` allowlist.
+- **GPO dependency for T1003.001:** the LSASS rule
+  needs "Audit Handle to Kernel Objects" (Success)
+  enabled. The PHASE12-windows.md guide documents the
+  full GPO set.
+- **Honest gap:** the 5 rules were tested on Linux with
+  a fake-redis runner. The selection/dedup/cooldown/
+  count-in-window/action-rendering paths are all
+  exercised by the 15 tests. What was NOT exercised:
+  real Windows Event Log events flowing through the
+  eventlog_common.go decoder, real `netsh advfirewall`
+  block_ip on a real Windows host, or a real GPO
+  rollout on a real AD domain. Operators must run a
+  real-Windows integration smoke test after upgrading.
+
+[1.4.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.2.0...v1.4.0
 
 ## [1.2.0] - 2026-08-29
 

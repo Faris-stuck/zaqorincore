@@ -1,0 +1,62 @@
+title: Windows 4688 — process created from a suspicious parent
+id: builtin-windows-4688-suspicious-parent
+description: |
+  Detects a process creation (Event ID 4688) where the
+  parent process is one of the well-known LOLBins
+  commonly abused for code execution by initial-access
+  and post-exploitation tooling. The list is the
+  minimum-viable set (regsvr32, mshta, wscript, cscript,
+  certutil, bitsadmin); a larger list is a v1.4.x
+  follow-up.
+
+  This is the Windows analog of the Linux
+  `T1059_command_interpreter` rule (which fires on a
+  shell-spawning event from a web server parent).
+
+  Note: 4688 metadata (parent_process_name, command_line)
+  is only populated if Process Command Line auditing is
+  enabled (Group Policy: "Include command line in
+  process creation events"). See
+  docs/PHASE12-windows.md for the GPO path.
+
+  Mapping:
+    ATT&CK T1218 (System Binary Proxy Execution)
+    ATT&CK T1059.005 (Visual Basic)
+    ATT&CK T1059.007 (JavaScript)
+    ATT&CK T1140 (Deobfuscate/Decode Files or Information)
+    ISO 27001 A.5.7 (Threat intelligence)
+    PCI DSS 10.2.1 (Audit logs capture individual user
+      access)
+tags:
+  - attack.t1218
+  - attack.t1059.005
+  - attack.t1059.007
+  - attack.t1140
+  - attack.execution
+  - attack.defense_evasion
+  - compliance.pci_dss.req10
+  - compliance.iso27001.A5.7
+references:
+  - https://attack.mitre.org/techniques/T1218/
+  - https://attack.mitre.org/techniques/T1059/005/
+  - https://attack.mitre.org/techniques/T1059/007/
+  - https://attack.mitre.org/techniques/T1140/
+  - https://lolbas-project.github.io/
+level: high
+detection:
+  selection:
+    source: "windows.security.4688"
+    parent_process_name:
+      - "regsvr32.exe"
+      - "mshta.exe"
+      - "wscript.exe"
+      - "cscript.exe"
+      - "certutil.exe"
+      - "bitsadmin.exe"
+  condition: selection
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 1800
+dedup_key: "{{pid}}:{{parent_process_name}}"

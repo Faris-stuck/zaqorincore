@@ -1,0 +1,40 @@
+title: Windows failed logon burst (brute force)
+id: builtin-windows-4625-brute-force
+description: |
+  Detects a burst of failed Windows logon attempts (Event ID
+  4625) from a single source IP within 60 seconds. This is
+  the Windows analog of the Linux `ssh_bruteforce` rule and
+  covers password-guessing, RDP brute force, and SMB
+  account enumeration. The rule fires when 10 or more
+  failed logons occur from the same source IP within a
+  60-second window, regardless of the target account (the
+  attacker may be rotating usernames).
+
+  Mapping:
+    ATT&CK T1110 (Brute Force)
+    NIST CSF DE.CM (Security Continuous Monitoring)
+    PCI DSS 10.2.4 (Review audit logs for failed
+      authentication attempts)
+    ISO 27001 A.5.16 (Identity management)
+tags:
+  - attack.t1110
+  - attack.credential_access
+  - compliance.pci_dss.req10
+  - compliance.iso27001.A5.16
+  - compliance.nist_800_53.ac.7
+references:
+  - https://attack.mitre.org/techniques/T1110/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4625
+level: high
+detection:
+  selection:
+    source: "windows.security.4625"
+  condition: selection
+  timeframe: 60s
+  count: 10
+action:
+  kind: block_ip
+  target: "{{ip_address}}"
+  ttl_sec: 3600
+cooldown_sec: 1800
+dedup_key: "{{ip_address}}"
