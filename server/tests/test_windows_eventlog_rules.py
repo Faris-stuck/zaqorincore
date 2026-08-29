@@ -259,8 +259,7 @@ async def test_t1098_fires_on_domain_admins_add() -> None:
     fires = await runner.evaluate(
         _event(
             "windows.security.4732",
-            target_sid="EXAMPLE-S-1-5-32-548",  # Domain Admins
-            member_sid="EXAMPLE-S-1-5-21-...-1107",
+            target_group_name="Domain Admins",
             member_name="alice",
             pid=1234,
         )
@@ -281,8 +280,7 @@ async def test_t1098_does_not_fire_on_non_priv_group() -> None:
     fires = await runner.evaluate(
         _event(
             "windows.security.4732",
-            target_sid="EXAMPLE-S-1-5-32-555",
-            member_sid="EXAMPLE-S-1-5-21-...-1108",
+            target_group_name="Remote Desktop Users",
             member_name="bob",
             pid=1234,
         )
@@ -292,26 +290,29 @@ async def test_t1098_does_not_fire_on_non_priv_group() -> None:
 
 @pytest.mark.asyncio
 async def test_t1098_fires_on_all_listed_priv_groups() -> None:
-    """All four target SIDs in the allowlist should fire."""
+    """All 8 target groups in the v1.4.y allowlist should fire."""
     rules = _windows_rules()
     t1098 = _find(rules, "builtin-windows-4732-priv-group-add")
     runner = SigmaRuleRunner(FakeRedis(), [t1098])
-    for sid in [
-        "EXAMPLE-S-1-5-32-544",  # Administrators
-        "EXAMPLE-S-1-5-32-548",  # Domain Admins
-        "EXAMPLE-S-1-5-32-549",  # Enterprise Admins
-        "EXAMPLE-S-1-5-32-551",  # Schema Admins
+    for group in [
+        "BUILTIN\\Administrators",
+        "Domain Admins",
+        "Enterprise Admins",
+        "Schema Admins",
+        "Account Operators",
+        "Server Operators",
+        "Print Operators",
+        "Backup Operators",
     ]:
         fires = await runner.evaluate(
             _event(
                 "windows.security.4732",
-                target_sid=sid,
-                member_sid="EXAMPLE-S-1-5-21-...-1109",
+                target_group_name=group,
                 member_name="charlie",
                 pid=1234,
             )
         )
-        assert len(fires) == 1, f"failed to fire on {sid}"
+        assert len(fires) == 1, f"failed to fire on {group}"
 
 
 # --------------------------------------------------------------------

@@ -1,20 +1,31 @@
-title: Windows user account created
+title: Windows user account created (off-hours)
 id: builtin-windows-4720-account-create
 description: |
-  Detects a new user account being created (Event ID 4720).
+  Detects a new user account being created (Event ID 4720)
+  during off-hours: outside the business-hours window
+  09:00-17:00 local time.
+
   Every new account is a potential persistence mechanism
   (ATT&CK T1136 Create Account) for an attacker who has
   already obtained Domain Admin or local Administrator
-  credentials. This rule fires on every 4720 event with
-  a 1-hour cooldown per (host, target_user_name) pair, so
-  a real onboarding flow that creates N accounts in N
-  hours will produce N alerts, not one storm.
+  credentials. Off-hours is the strongest signal of
+  malicious intent — legitimate onboarding is performed
+  during business hours by HR / IT staff.
 
-  Operators who want a stricter rule (off-hours only,
-  exclude known service-account provisioning scripts) can
-  override this rule in `rules.local_overrides/` and add
-  a filter on `target_user_name` or a `contains:` match
-  on the parent process.
+  The agent must populate `metadata.hour` (0-23) on the
+  event from the local clock at the time the event was
+  received. The Windows collector (v1.2.0) populates
+  this from the event's TimeGenerated field.
+
+  Operators who want to broaden the rule (e.g. fire on
+  all 4720 events regardless of hour) can override in
+  `rules.local_overrides/` and remove the off-hours
+  condition.
+
+  v1.4.0 shipped this rule firing 24x7 because the
+  engine couldn't parse `selection and not filter`.
+  v1.4.y adds compound condition parsing (ADR-010) and
+  narrows the rule to off-hours.
 
   Mapping:
     ATT&CK T1136 (Create Account)
@@ -33,11 +44,22 @@ tags:
 references:
   - https://attack.mitre.org/techniques/T1136/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4720
-level: medium
+level: high
 detection:
   selection:
     source: "windows.security.4720"
-  condition: selection
+  filter_business_hours:
+    metadata.hour:
+      - "9"
+      - "10"
+      - "11"
+      - "12"
+      - "13"
+      - "14"
+      - "15"
+      - "16"
+      - "17"
+  condition: selection and not filter_business_hours
 action:
   kind: snapshot_processes
   target: "{{pid}}"

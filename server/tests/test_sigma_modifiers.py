@@ -229,6 +229,7 @@ async def test_startswith_modifier_fires_through_runner() -> None:
         _event(
             source="windows.security.4688",
             pid=4321,
+            parent_process_name="powershell.exe",
             command_line=(
                 "powershell.exe -EncodedCommand "
                 "ZQBjAGgAbwAgACIAdABlAHMAdAAiAA=="

@@ -1,53 +1,72 @@
-title: Windows user added to privileged group (Domain Admins / Enterprise Admins)
+title: Windows user added to privileged group (T1098)
 id: builtin-windows-4732-priv-group-add
 description: |
-  Detects a member being added to a privileged security-
-  enabled group (Event ID 4732). The rule scopes to the
-  three groups that an attacker must compromise to fully
-  own an Active Directory domain:
-    - Domain Admins (S-1-5-32-548)
-    - Enterprise Admins (S-1-5-32-549)
-    - Schema Admins (S-1-5-32-551)
-  plus the local Administrators group (BUILTIN\Administrators,
-  S-1-5-32-544). A non-admin user added to one of these
-  groups is either a misconfiguration (worth surfacing) or
-  a privilege-escalation attack (worth alerting on).
+  Detects a member being added to a privileged AD group
+  (Event ID 4732). The list of monitored groups covers
+  both Domain-level high-value groups (Domain Admins,
+  Enterprise Admins, Schema Admins, Account Operators,
+  Server Operators, Print Operators, Backup Operators)
+  AND BUILTIN\Administrators. This is the v1.4.y version
+  of the v1.4.0 rule — v1.4.0 covered only the 4
+  Domain-level groups; v1.4.y adds Account Operators,
+  Server Operators, Print Operators, Backup Operators
+  (which are also high-value targets for an attacker
+  who has compromised a privileged user), AND scopes
+  the rule via OR compound conditions (ADR-010) to fire
+  only when the group is in the list.
 
-  Implementation note: the current rule-engine selection
-  matches on event metadata list membership. Operators
-  with deeper Active Directory instrumentation can
-  switch to a `contains:` match on the target_sid
-  substring for the four well-known RIDs.
+  Real-world abuse: the "Skeleton Key" and "DCShadow"
+  attacks both require addition to one of these groups
+  for persistence. The rule fires immediately on any
+  4732 event where the target group matches, with a
+  10-minute cooldown per (host, target_group, member)
+  tuple.
+
+  Detection:
+    - source == "windows.security.4732"
+    - target_group_name in [Domain Admins, Enterprise
+      Admins, Schema Admins, Account Operators, Server
+      Operators, Print Operators, Backup Operators,
+      BUILTIN\Administrators]
+  Required GPO: "Audit Security Group Management"
+  must be enabled (Success).
 
   Mapping:
     ATT&CK T1098 (Account Manipulation)
-    ATT&CK T1078.002 (Valid Accounts: Domain Accounts)
-    PCI DSS 7.1 (Restrict access to system components)
-    ISO 27001 A.5.15 (Access control)
+    ATT&CK T1098.001 (Additional Cloud Credentials)
+      — analogous AD technique
+    PCI DSS 7.2.2 (Privileged access assigned only to
+      need-to-know)
+    ISO 27001 A.5.18 (Access rights)
     NIST 800-53 AC-6 (Least Privilege)
 tags:
   - attack.t1098
+  - attack.t1098.001
   - attack.persistence
   - attack.privilege_escalation
   - compliance.pci_dss.req7
-  - compliance.iso27001.A5.15
-  - compliance.nist_800_53.ac.6
+  - compliance.iso27001.A5.18
+  - compliance.nist_800_53.AC-6
 references:
   - https://attack.mitre.org/techniques/T1098/
   - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4732
-level: critical
+level: high
 detection:
   selection:
     source: "windows.security.4732"
-    target_sid:
-      - "EXAMPLE-S-1-5-32-544"  # BUILTIN\Administrators
-      - "EXAMPLE-S-1-5-32-548"  # Domain Admins
-      - "EXAMPLE-S-1-5-32-549"  # Enterprise Admins
-      - "EXAMPLE-S-1-5-32-551"  # Schema Admins
+    target_group_name:
+      - "Domain Admins"
+      - "Enterprise Admins"
+      - "Schema Admins"
+      - "Account Operators"
+      - "Server Operators"
+      - "Print Operators"
+      - "Backup Operators"
+      - "BUILTIN\\Administrators"
   condition: selection
 action:
   kind: snapshot_processes
   target: "{{pid}}"
   ttl_sec: 0
-cooldown_sec: 0
-dedup_key: "{{target_sid}}:{{member_sid}}"
+cooldown_sec: 600
+dedup_key: "{{target_group_name}}:{{member_name}}"

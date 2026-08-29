@@ -46,6 +46,15 @@ the runtime code lands in the next three feature releases.
   release. **Target: v1.4.x.** ✅ **Shipped.** (OR/AND
   condition parsing still deferred to v1.4.y; off-hours
   filter for T1136 blocked on that — see PHASE14 §4.)
+- **Sigma engine compound conditions** ([ADR-010](docs/decisions/ADR-010-sigma-compound-conditions.md))
+  — extends `matches()` to 4 patterns: `selection`,
+  `selection and not filter` (NOW EVALUATES), `selection
+  and (X or Y)`, `selection and (X or Y) and not Z`.
+  Unlocks off-hours filter for T1136, parent-process
+  scope for the 2 PowerShell rules, and T1098 group
+  allowlist expansion (4→8). **Target: v1.4.y.**
+  ✅ **Shipped.** (Strict missing-hour fail-safe for
+  T1136 deferred to v1.4.z — see PHASE15 §6.)
 - **SOAR webhook delivery** ([ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md))
   — six backends ship (generic webhook, Slack, Discord,
   PagerDuty, TheHive, Jira) with dead-letter + replay.
@@ -264,6 +273,51 @@ $ pytest  # full server suite
 (was 250 in v1.4.0 → 282 in v1.4.x, +32 new tests)
 
 [1.4.x]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.0...v1.4.x
+
+## [1.4.y] - 2026-08-29
+
+The Sigma engine compound condition parser
+([ADR-010](docs/decisions/ADR-010-sigma-compound-conditions.md))
+ships in this release. The `matches()` method now
+supports 4 patterns:
+
+1. `selection` — existing behavior, no change
+2. `selection and not filter` — NOW ACTUALLY EVALUATES
+   the filter (v1.4.0/v1.4.x silently dropped it)
+3. `selection and (X or Y or Z)` — at least one of the
+   OR filters must match
+4. `selection and (X or Y) and not Z` — at least one OR
+   filter matches AND the AND-NOT filter does not match
+
+The implementation is a shallow, rule-string-driven
+dispatch via `re.fullmatch` — not a full Sigma spec
+parser. The 4 patterns cover every compound condition
+the current ruleset needs; further patterns are
+deferred to v2.0.0.
+
+### 3 rules upgraded to use the new patterns
+
+| Rule | v1.4.0/v1.4.x behavior | v1.4.y behavior |
+|---|---|---|
+| `builtin-windows-4720-account-create` | fires 24x7 | fires only outside business hours (09:00-17:00 local) |
+| `builtin-windows-4688-powershell-encoded` | any process with "EncodedCommand" in cmdline | PowerShell-launched (parent ∈ {powershell.exe, pwsh.exe}) |
+| `builtin-windows-4688-powershell-download` | any process with "DownloadString" in cmdline | PowerShell-launched (parent ∈ {powershell.exe, pwsh.exe}) |
+| `builtin-windows-4732-priv-group-add` | 4 SIDs via `contains:` substring | 8 group names via list-membership (added Account/Server/Print/Backup Operators) |
+
+### Test results
+
+```
+$ pytest tests/test_sigma_compound_conditions.py
+12 passed in 0.21s
+
+$ pytest  # full server suite
+294 passed in 20.45s
+```
+
+(was 282 in v1.4.x → 294 in v1.4.y, +12 new tests, 0
+regressions)
+
+[1.4.y]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.x...v1.4.y
 
 ## [1.2.0] - 2026-08-29
 

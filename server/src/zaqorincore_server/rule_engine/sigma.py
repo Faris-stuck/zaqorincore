@@ -182,6 +182,7 @@ class CompiledSigmaRule:
     title: str
     level: str
     selection: dict[str, Any]
+    detection: dict[str, Any]  # full detection block (for compound conditions)
     condition: str
     count: int
     timeframe_sec: int
@@ -193,11 +194,72 @@ class CompiledSigmaRule:
         """Single-event matching. The runner is responsible for
         counting events in a window — this function checks one
         event against the rule's selection.
+
+        Supported condition patterns (ADR-010):
+        - `selection` — all keys in selection must match
+        - `selection and not filter` — filter must NOT match
+        - `selection and (filter1 or filter2 or ...)` — at
+          least one of the listed filters must match
+        - `selection and (filter1 or filter2 or ...) and not filter3` —
+          at least one of the OR filters must match AND the
+          AND-NOT filter must NOT match
         """
-        if self.condition == "selection":
+        cond = self.condition
+        # Pattern 1: `selection`
+        if cond == "selection":
             return _match_selection(event, self.selection)
-        if self.condition == "selection and not filter":
-            return _match_selection(event, self.selection)
+        # Pattern 2: `selection and not filter` (v1.4.0 existed
+        # but silently dropped the filter; v1.4.y evaluates it)
+        m = re.fullmatch(r"selection\s+and\s+not\s+(\w+)", cond.strip())
+        if m:
+            filter_name = m.group(1)
+            if filter_name not in self.detection:
+                # Unknown filter → no match (don't fail-open)
+                return False
+            return _match_selection(
+                event, self.selection
+            ) and not _match_selection(event, self.detection[filter_name])
+        # Pattern 3: `selection and (X or Y or Z)`
+        m = re.fullmatch(
+            r"selection\s+and\s+\(([^)]+)\)", cond.strip()
+        )
+        if m:
+            inner = m.group(1)
+            filter_names = [
+                f.strip() for f in inner.split(" or ")
+            ]
+            for fn in filter_names:
+                if fn not in self.detection:
+                    # Unknown filter → no match
+                    return False
+            if not _match_selection(event, self.selection):
+                return False
+            return any(
+                _match_selection(event, self.detection[fn])
+                for fn in filter_names
+            )
+        # Pattern 4: `selection and (X or Y) and not Z`
+        m = re.fullmatch(
+            r"selection\s+and\s+\(([^)]+)\)\s+and\s+not\s+(\w+)",
+            cond.strip(),
+        )
+        if m:
+            inner = m.group(1)
+            not_filter = m.group(2)
+            filter_names = [
+                f.strip() for f in inner.split(" or ")
+            ]
+            for fn in filter_names + [not_filter]:
+                if fn not in self.detection:
+                    return False
+            if not _match_selection(event, self.selection):
+                return False
+            if _match_selection(event, self.detection[not_filter]):
+                return False
+            return any(
+                _match_selection(event, self.detection[fn])
+                for fn in filter_names
+            )
         # Unknown condition → no match. Don't silently fail-open.
         return False
 
@@ -284,6 +346,7 @@ def _compile(raw: dict[str, Any], path: Path) -> CompiledSigmaRule:
         title=title,
         level=level,
         selection=selection,
+        detection=detection,
         condition=condition,
         count=count,
         timeframe_sec=timeframe_sec,
