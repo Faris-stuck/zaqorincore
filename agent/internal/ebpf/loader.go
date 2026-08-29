@@ -1,28 +1,26 @@
 // Package ebpf holds the eBPF kernel-telemetry backend for the
 // ZaqorinCore agent (v1.1.0, see ADR-006).
 //
-// Slice 2-5 (v1.1.0) replaces the Slice 1 scaffold with a real
-// loader that:
+// This file is the RUNTIME loader. It is NOT build-tagged:
+// the bpf2go-generated Go file (probes/obj/zaqorin_probes_bpfel.go)
+// embeds the compiled BPF ELF as []byte, so a plain `go build`
+// succeeds with no toolchain on the host. The kernel check in
+// NewReal handles the "no BPF available at runtime" case
+// (older kernel, no CAP_BPF, no objects, etc.) by returning
+// (nil, reason) and letting NewBackend fall back to the
+// NotImplemented stub in ebpf.go.
 //
-//   - loads the five BPF programs (execve, openat, connect,
-//     ptrace, setuid) via cilium/ebpf;
-//   - attaches them to their kernel tracepoints;
-//   - drains a single shared ring buffer ("events" map);
-//   - converts each BPF event to a wire-format Event and
-//     hands it to the app dispatcher via a callback.
-//
-// The BPF programs themselves live in ./probes/*.c. They are
-// compiled to ELF objects out-of-band by `make ebpf` (which
-// invokes bpf2go from the cilium/ebpf/cmd/bpf2go tool). The
-// generated objects are placed at ./probes/obj/ and embedded
-// below. On a system without the compile toolchain the agent
-// still builds and runs, but the BPF backend is unavailable
-// and the file-tail backend (the v1.0.0 default) takes over.
+// The BPF programs themselves live in ./probes/c/*.c. They
+// are compiled to ELF objects via `make ebpf` which invokes
+// bpf2go from cilium/ebpf/cmd/bpf2go. The generated objects
+// are placed at ./probes/obj/ and embedded in the Go binary
+// by bpf2go's _Zaqorin_probesBytes blob.
 //
 // Runtime fallback chain (Availability):
-//   1. kernel >= 5.4 AND CAP_BPF AND embedded objects present
-//      AND bpf() syscall succeeds → real probes
-//   2. otherwise → NotImplemented stub (logs once, returns)
+//
+//  1. kernel >= 5.4 AND CAP_BPF AND embedded objects present
+//     AND bpf() syscall succeeds → real probes
+//  2. otherwise → NotImplemented stub (logs once, returns)
 package ebpf
 
 import (
@@ -30,11 +28,11 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -43,11 +41,12 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 
 	"github.com/Faris-stuck/zaqorincore/agent/internal/event"
+	bpfobj "github.com/Faris-stuck/zaqorincore/agent/internal/ebpf/probes/obj"
 )
 
 // bpfEvent mirrors the C struct in probes/common.h byte-for-byte.
@@ -110,49 +109,46 @@ const (
 	tagSetuid  = 0x78737500
 )
 
-// probeSpec is one BPF program: which collection to load it
-// from, which tracepoint to attach to, and the wire source
-// prefix.
+// probeSpec is one BPF program in the single combined
+// CollectionSpec. We load one Collection (from
+// loadZaqorin_probes) that contains all five programs and
+// the shared "events" ring buffer. Each program attaches to
+// its tracepoint independently.
 type probeSpec struct {
-	Name       string        // "execve", "openat", ...
-	SourceTag  string        // wire source suffix: "ebpf/execve"
-	ObjectPath string        // path to the compiled .o
-	ProgName   string        // symbol name in the .o
-	Category   string        // tracepoint category
-	EventName  string        // tracepoint event
+	Name      string // "execve", "openat", ...
+	SourceTag string // wire source suffix: "ebpf/execve"
+	ProgName  string // bpf2go-generated Programs field name
+	Category  string // tracepoint category
+	EventName string // tracepoint event
 }
 
-// All five probes shipped in v1.1.0. Order matches ADR-006.
+// allProbes lists the five BPF programs shipped in v1.1.0.
+// Order matches ADR-006.
 var allProbes = []probeSpec{
 	{
 		Name: "execve", SourceTag: "ebpf/execve",
-		ObjectPath: "probes/obj/execve_monitor.o",
-		ProgName:   "handle_execve",
-		Category:   "syscalls", EventName: "sys_enter_execve",
+		ProgName:  "HandleExecve",
+		Category:  "syscalls", EventName: "sys_enter_execve",
 	},
 	{
 		Name: "openat", SourceTag: "ebpf/openat",
-		ObjectPath: "probes/obj/openat_monitor.o",
-		ProgName:   "handle_openat",
-		Category:   "syscalls", EventName: "sys_enter_openat",
+		ProgName:  "HandleOpenat",
+		Category:  "syscalls", EventName: "sys_enter_openat",
 	},
 	{
 		Name: "connect", SourceTag: "ebpf/connect",
-		ObjectPath: "probes/obj/connect_monitor.o",
-		ProgName:   "handle_connect",
-		Category:   "syscalls", EventName: "sys_enter_connect",
+		ProgName:  "HandleConnect",
+		Category:  "syscalls", EventName: "sys_enter_connect",
 	},
 	{
 		Name: "ptrace", SourceTag: "ebpf/ptrace",
-		ObjectPath: "probes/obj/ptrace_monitor.o",
-		ProgName:   "handle_ptrace",
-		Category:   "syscalls", EventName: "sys_enter_ptrace",
+		ProgName:  "HandlePtrace",
+		Category:  "syscalls", EventName: "sys_enter_ptrace",
 	},
 	{
 		Name: "setuid", SourceTag: "ebpf/setuid",
-		ObjectPath: "probes/obj/setuid_monitor.o",
-		ProgName:   "handle_setuid",
-		Category:   "syscalls", EventName: "sys_enter_setuid",
+		ProgName:  "HandleSetuid",
+		Category:  "syscalls", EventName: "sys_enter_setuid",
 	},
 }
 
@@ -165,7 +161,9 @@ type LoadConfig struct {
 	Probes []string
 
 	// RingBufferBytes is the size of the shared ring buffer.
-	// Zero = 256 KiB (the ADR-006 default).
+	// Zero = 256 KiB (the ADR-006 default). Currently
+	// informational only; the actual size is set at compile
+	// time via __uint(max_entries, ...) in probes_main.bpf.c.
 	RingBufferBytes int
 
 	// AgentID is the host identifier used in every event.
@@ -176,8 +174,8 @@ type LoadConfig struct {
 // loaded. If the BPF backend is unavailable, Loaded is empty
 // and the agent should fall back to the file-tail backend.
 type LoadResult struct {
-	Loaded []string  // probe names successfully attached
-	Reason string    // human-readable reason if Loaded is empty
+	Loaded []string // probe names successfully attached
+	Reason string   // human-readable reason if Loaded is empty
 }
 
 // Real is the working BPF backend. It owns the loaded
@@ -186,15 +184,15 @@ type Real struct {
 	logger  *slog.Logger
 	cfg     LoadConfig
 	hostID  string
-	col     *ebpf.Collection
+	objs    *bpfobj.BpfObjects
 	links   []link.Link
 	reader  *ringbuf.Reader
 	dropped atomic.Uint64
 }
 
 // NewReal attempts to build the BPF backend according to cfg.
-// If the kernel is too old, CAP_BPF is missing, or any of the
-// compiled objects are not present, it returns (nil, reason).
+// If the kernel is too old, CAP_BPF is missing, or the
+// embedded objects cannot be loaded, it returns (nil, reason).
 // Callers should fall back to NewNotImplemented() in that case.
 func NewReal(logger *slog.Logger, cfg LoadConfig) (*Real, string) {
 	if runtime.GOOS != "linux" {
@@ -214,48 +212,52 @@ func NewReal(logger *slog.Logger, cfg LoadConfig) (*Real, string) {
 		logger.Warn("ebpf: remove memlock rlimit failed",
 			slog.String("error", err.Error()))
 	}
-	// Resolve which probes to load.
-	probes := allProbes
+
+	objs, err := bpfobj.LoadObjects()
+	if err != nil {
+		return nil, fmt.Sprintf("ebpf: loadAndAssign: %v", err)
+	}
+
+	// Resolve which probes to attach.
+	probesToLoad := allProbes
 	if len(cfg.Probes) > 0 {
-		probes = nil
+		probesToLoad = nil
 		for _, p := range allProbes {
 			for _, want := range cfg.Probes {
 				if p.Name == want {
-					probes = append(probes, p)
+					probesToLoad = append(probesToLoad, p)
 				}
 			}
 		}
 	}
-	// We only have one program per .o; we load one collection
-	// per probe. The first probe is the "primary" — its
-	// collection owns the ring buffer.
-	r := &Real{logger: logger, cfg: cfg, hostID: cfg.AgentID}
-	for i, p := range probes {
-		spec, lerr := loadOne(p)
+	if len(probesToLoad) == 0 {
+		objs.Close()
+		return nil, "ebpf: no probes selected (empty cfg.Probes filter)"
+	}
+
+	r := &Real{
+		logger: logger, cfg: cfg, hostID: cfg.AgentID,
+		objs: objs,
+	}
+	rd, rderr := ringbuf.NewReader(objs.Events)
+	if rderr != nil {
+		objs.Close()
+		return nil, fmt.Sprintf("ebpf: open ringbuf: %v", rderr)
+	}
+	r.reader = rd
+
+	for _, p := range probesToLoad {
+		prog := lookupProgram(objs, p.ProgName)
+		if prog == nil {
+			cleanup(r)
+			return nil, fmt.Sprintf("ebpf: program %q not in collection", p.ProgName)
+		}
+		l, lerr := link.Tracepoint(p.Category, p.EventName, prog, nil)
 		if lerr != nil {
-			if r.col != nil {
-				r.col.Close()
-			}
-			for _, l := range r.links {
-				_ = l.Close()
-			}
-			return nil, fmt.Sprintf("ebpf: %s: %v", p.Name, lerr)
+			cleanup(r)
+			return nil, fmt.Sprintf("ebpf: attach %s: %v", p.Name, lerr)
 		}
-		if i == 0 {
-			r.col = spec.col
-			rd, rderr := ringbuf.NewReader(spec.col.Maps["events"])
-			if rderr != nil {
-				cleanup(r)
-				return nil, fmt.Sprintf("ebpf: open ringbuf: %v", rderr)
-			}
-			r.reader = rd
-		} else {
-			// Subsequent collections share the same
-			// "events" ring buffer; we only read from
-			// the first one's reader.
-			spec.col.Close()
-		}
-		r.links = append(r.links, spec.link)
+		r.links = append(r.links, l)
 		logger.Info("ebpf: probe attached",
 			slog.String("probe", p.Name),
 			slog.String("source", p.SourceTag),
@@ -264,45 +266,25 @@ func NewReal(logger *slog.Logger, cfg LoadConfig) (*Real, string) {
 	return r, ""
 }
 
-type loadedSpec struct {
-	col  *ebpf.Collection
-	link link.Link
-}
-
-func loadOne(p probeSpec) (*loadedSpec, error) {
-	// Resolve the object path relative to the executable's
-	// working directory. Operators can override by symlinking
-	// the objects into /etc/zaqorin/ebpf/.
-	path := p.ObjectPath
-	if _, err := os.Stat(path); err != nil {
-		// Try the install location as a fallback.
-		alt := filepath.Join("/etc/zaqorin/ebpf",
-			filepath.Base(p.ObjectPath))
-		if _, err2 := os.Stat(alt); err2 == nil {
-			path = alt
-		} else {
-			return nil, fmt.Errorf("object not found: %s (run `make ebpf` to build)", p.ObjectPath)
-		}
+// lookupProgram returns the cilium/ebpf Program with the
+// given name from the loaded objects struct. Returns nil if
+// the symbol was not present in the compiled object (e.g.
+// the program was excluded by the C preprocessor).
+func lookupProgram(objs *bpfobj.BpfObjects, name string) *ebpf.Program {
+	switch name {
+	case "HandleExecve":
+		return objs.HandleExecve
+	case "HandleOpenat":
+		return objs.HandleOpenat
+	case "HandleConnect":
+		return objs.HandleConnect
+	case "HandlePtrace":
+		return objs.HandlePtrace
+	case "HandleSetuid":
+		return objs.HandleSetuid
+	default:
+		return nil
 	}
-	spec, err := ebpf.LoadCollectionSpec(path)
-	if err != nil {
-		return nil, fmt.Errorf("load spec: %w", err)
-	}
-	col, err := ebpf.NewCollection(spec)
-	if err != nil {
-		return nil, fmt.Errorf("new collection: %w", err)
-	}
-	prog, ok := col.Programs[p.ProgName]
-	if !ok {
-		col.Close()
-		return nil, fmt.Errorf("program %q not in object", p.ProgName)
-	}
-	l, err := link.Tracepoint(p.Category, p.EventName, prog, nil)
-	if err != nil {
-		col.Close()
-		return nil, fmt.Errorf("attach tracepoint: %w", err)
-	}
-	return &loadedSpec{col: col, link: l}, nil
 }
 
 // Name implements Backend.
@@ -331,7 +313,7 @@ func (r *Real) Run(ctx context.Context, handler func(event []byte) error) error 
 				return ctx.Err()
 			}
 			// ringbuf.ErrClosed means cleanup ran.
-			if err == ringbuf.ErrClosed {
+			if errors.Is(err, ringbuf.ErrClosed) {
 				return nil
 			}
 			r.logger.Warn("ebpf: ringbuf read",
@@ -365,8 +347,8 @@ func cleanup(r *Real) {
 	for _, l := range r.links {
 		_ = l.Close()
 	}
-	if r.col != nil {
-		r.col.Close()
+	if r.objs != nil {
+		r.objs.Close()
 	}
 }
 
@@ -494,35 +476,47 @@ func encodeWire(e event.Event, _ string) []byte {
 // kernelVersion parses /proc/version to extract the kernel
 // major.minor version. Example line:
 //
-//   Linux version 5.15.0-91-generic (buildd@lcy02-amd64-038) ...
-//
+//	Linux version 5.15.0-91-generic (buildd@lcy02-amd64-038) ...
 func kernelVersion() (int, int, error) {
-	data, err := os.ReadFile("/proc/version")
+	data, err := readFileOS("/proc/version")
 	if err != nil {
 		return 0, 0, err
 	}
-	fields := strings.Fields(string(data))
-	if len(fields) < 3 {
-		return 0, 0, fmt.Errorf("unexpected /proc/version: %q", string(data))
+	return parseKernelVersion(string(data))
+}
+
+// readFileOS is split out so tests can supply a fixture
+// without touching the real /proc.
+func readFileOS(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+func parseKernelVersion(s string) (int, int, error) {
+	// "Linux version 6.8.0-110-generic (...)"
+	idx := strings.Index(s, "version ")
+	if idx < 0 {
+		return 0, 0, fmt.Errorf("no 'version' in: %s", strings.TrimSpace(s))
 	}
-	// fields[2] is "5.15.0-91-generic"
-	ver := fields[2]
-	dot := strings.Index(ver, ".")
+	rest := s[idx+len("version "):]
+	// Parse "MAJOR.MINOR..." (skip patch + suffix).
+	dot := strings.Index(rest, ".")
 	if dot < 0 {
-		return 0, 0, fmt.Errorf("no dot in %q", ver)
+		return 0, 0, fmt.Errorf("no '.' in: %s", rest)
 	}
-	major, err := strconv.Atoi(ver[:dot])
-	if err != nil {
-		return 0, 0, fmt.Errorf("major: %w", err)
+	major, err1 := strconv.Atoi(rest[:dot])
+	minor := 0
+	minorStr := rest[dot+1:]
+	for i := 0; i < len(minorStr); i++ {
+		if minorStr[i] < '0' || minorStr[i] > '9' {
+			minorStr = minorStr[:i]
+			break
+		}
 	}
-	rest := ver[dot+1:]
-	end := strings.IndexAny(rest, ".-")
-	if end < 0 {
-		end = len(rest)
+	if minorStr != "" {
+		minor, err1 = strconv.Atoi(minorStr)
 	}
-	minor, err := strconv.Atoi(rest[:end])
-	if err != nil {
-		return 0, 0, fmt.Errorf("minor: %w", err)
+	if err1 != nil {
+		return 0, 0, err1
 	}
 	return major, minor, nil
 }

@@ -22,11 +22,7 @@
 #include <bpf/bpf_endian.h>
 #include <linux/socket.h>
 #include <linux/in.h>
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 18);
-} events SEC(".maps");
+#include <linux/in6.h>
 
 SEC("tracepoint/syscalls/sys_enter_connect")
 int handle_connect(struct trace_event_raw_sys_enter *ctx) {
@@ -73,5 +69,3 @@ int handle_connect(struct trace_event_raw_sys_enter *ctx) {
     bpf_ringbuf_submit(e, 0);
     return 0;
 }
-
-char _license[] SEC("license") = "GPL";

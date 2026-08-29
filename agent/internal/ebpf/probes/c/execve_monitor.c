@@ -16,13 +16,6 @@
 #include "common.h"
 #include <bpf/bpf_helpers.h>
 
-// Ring buffer map. Populated by every probe in this directory;
-// the Go loader reads from the same FD.
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 18);  // 256 KiB, matches v1.1.0 default
-} events SEC(".maps");
-
 SEC("tracepoint/syscalls/sys_enter_execve")
 int handle_execve(struct trace_event_raw_sys_enter *ctx) {
     // bpf_event + body lives on the BPF stack.
@@ -64,5 +57,3 @@ int handle_execve(struct trace_event_raw_sys_enter *ctx) {
     bpf_ringbuf_submit(e, 0);
     return 0;
 }
-
-char _license[] SEC("license") = "GPL";

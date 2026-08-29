@@ -16,11 +16,6 @@
 #include "common.h"
 #include <bpf/bpf_helpers.h>
 
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 18);
-} events SEC(".maps");
-
 SEC("tracepoint/syscalls/sys_enter_ptrace")
 int handle_ptrace(struct trace_event_raw_sys_enter *ctx) {
     // ptrace args (from man ptrace): request, pid, addr, data.
@@ -41,5 +36,3 @@ int handle_ptrace(struct trace_event_raw_sys_enter *ctx) {
     bpf_ringbuf_submit(e, 0);
     return 0;
 }
-
-char _license[] SEC("license") = "GPL";

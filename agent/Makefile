@@ -1,62 +1,93 @@
 # ZaqorinCore agent — Makefile
 #
-# Run `make help` for a list of targets.
+# Targets:
+#   make ebpf   - compile probes/c/*.c into BPF ELF objects
+#                 and emit bpf2go Go wrappers under
+#                 internal/ebpf/probes/obj/. Run once after
+#                 editing any probe C file; the resulting
+#                 objects are embedded into the agent binary
+#                 via go:embed, so the agent itself never
+#                 needs a BPF toolchain at runtime.
+#
+#   make test   - run all agent tests (Go + decode).
+#
+#   make build  - go build ./... (requires `make ebpf` first
+#                 so the embedded objects are in place).
+#
+# Prerequisites for `make ebpf`:
+#   - clang (Ubuntu: apt install clang)
+#   - libbpf-dev (Ubuntu: apt install libbpf-dev)
+#   - linux-headers-$(uname -r) (Ubuntu: apt install
+#     linux-headers-generic, or matching headers package)
+#   - Go 1.22+ (already required to build the agent)
 
-# ---- Config ----
-BINARY      := zaqorin-agent
-CMD_PATH    := ./cmd/zaqorin-agent
-BUILD_DIR   := ./bin
-LDFLAGS     := -s -w -buildid=
+# Host architecture for BPF target. Override on the command
+# line for cross-builds, e.g. `make ebpf ARCH=arm64`.
+ARCH ?= amd64
 
-# Cross-compile targets (override on the command line, e.g. `make build GOOS=linux GOARCH=arm64`).
-GOOS        ?= $(shell go env GOOS)
-GOARCH      ?= $(shell go env GOARCH)
+# Linux kernel headers path. Default to the running kernel's
+# UAPI directory; override for cross-builds.
+KERN_UAPI ?= /usr/src/linux-headers-$(shell uname -r)/arch/x86/include/generated/uapi
 
-# ---- Phony targets ----
-.PHONY: all help build test test-race test-cover vet lint clean run smoke tidy fmt
+# Where bpf2go writes the ELF and Go files. Matches the
+# package layout in internal/ebpf/probes/.
+OBJ_DIR  := internal/ebpf/probes/obj
+C_DIR    := internal/ebpf/probes/c
+OUT_STEM := zaqorin_probes
 
-# Default goal.
-all: vet test build
+.PHONY: all ebpf test build clean check-prereqs
 
-help: ## Show this help.
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+all: ebpf build
 
-build: ## Build a static binary into ./bin/$(BINARY).
-	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) \
-		go build -trimpath -ldflags='$(LDFLAGS)' -o $(BUILD_DIR)/$(BINARY) $(CMD_PATH)
-	@echo "✓ built $(BUILD_DIR)/$(BINARY)"
+# Print which tools are missing and exit non-zero if any
+# are not on PATH. Operators can run `make check-prereqs`
+# before `make ebpf` to surface install instructions.
+check-prereqs:
+	@command -v clang >/dev/null 2>&1 || { echo "missing: clang (apt install clang)"; exit 1; }
+	@command -v go >/dev/null 2>&1 || { echo "missing: go (see README.md)"; exit 1; }
+	@pkg-config --modversion libbpf >/dev/null 2>&1 || { echo "missing: libbpf-dev (apt install libbpf-dev)"; exit 1; }
+	@test -d "$(KERN_UAPI)" || { echo "missing: $(KERN_UAPI) (apt install linux-headers-generic)"; exit 1; }
+	@echo "all prereqs present"
 
-test: ## Run unit tests.
-	go test -count=1 ./...
-
-test-race: ## Run unit tests with -race.
-	go test -race -count=1 ./...
-
-test-cover: ## Run unit tests with coverage report.
-	go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1
-
-vet: ## Run go vet.
-	go vet ./...
-
-lint: vet ## Alias for vet (placeholder for future golangci-lint).
-
-fmt: ## Run go fmt.
-	gofmt -s -w .
-
-tidy: ## Tidy module dependencies.
-	go mod tidy
-
-clean: ## Remove build artifacts.
-	rm -rf $(BUILD_DIR) coverage.out
-
-run: build ## Build and run with a local config (uses ./agent.toml if present).
-	@if [ -f ./agent.toml ]; then \
-		./$(BUILD_DIR)/$(BINARY) --config ./agent.toml; \
-	else \
-		echo "no ./agent.toml found; running with --help"; \
-		./$(BUILD_DIR)/$(BINARY) --help; \
+# Compile the BPF C programs into one combined ELF (all five
+# probes share a single "events" ring buffer map) and emit
+# the bpf2go-generated Go wrapper. See probes/c/README-style
+# comments in probes_main.bpf.c for the layout rationale.
+ebpf: check-prereqs
+	@mkdir -p $(OBJ_DIR)
+	@# Save the hand-maintained wrapper.go before bpf2go
+	@# wipes the obj/ directory.
+	@if [ -f $(OBJ_DIR)/wrapper.go ]; then \
+		mv $(OBJ_DIR)/wrapper.go $(OBJ_DIR)/.wrapper.go.bak; \
 	fi
+	GOPACKAGE=obj go run github.com/cilium/ebpf/cmd/bpf2go \
+		-target bpfel,$(ARCH) \
+		-output-dir $(OBJ_DIR) \
+		-output-stem $(OUT_STEM) \
+		$(OUT_STEM) \
+		$(C_DIR)/probes_main.bpf.c \
+		-- -I/usr/include -I/usr/include/x86_64-linux-gnu -I$(KERN_UAPI) -I$(C_DIR)
+	@# Restore wrapper.go if it was saved.
+	@if [ -f $(OBJ_DIR)/.wrapper.go.bak ]; then \
+		mv $(OBJ_DIR)/.wrapper.go.bak $(OBJ_DIR)/wrapper.go; \
+	fi
+	@# Remove the alternate-architecture copy bpf2go may also
+	@# generate (e.g. zaqorin_probes_x86_bpfel.go on x86).
+	@# We embed only the host-target object.
+	@find $(OBJ_DIR) -name '$(OUT_STEM)_x86_*' -delete 2>/dev/null || true
+	@find $(OBJ_DIR) -name '$(OUT_STEM)_arm64_*' -delete 2>/dev/null || true
+	@find $(OBJ_DIR) -name '$(OUT_STEM)_arm_*' -delete 2>/dev/null || true
+	@ls -la $(OBJ_DIR)
 
-smoke: build ## Run the end-to-end smoke test (requires websocat).
-	./scripts/smoke.sh
+test:
+	go test ./...
+
+build: ebpf
+	go build ./...
+
+clean:
+	rm -rf $(OBJ_DIR)/*.o $(OBJ_DIR)/*.go
+	# NOTE: do NOT add wrapper.go to the glob above. It is
+	# hand-maintained and survives `make ebpf` by convention.
+	# If you regenerated and it disappeared, recreate it from
+	# git: `git checkout HEAD -- internal/ebpf/probes/obj/wrapper.go`

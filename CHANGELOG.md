@@ -17,8 +17,7 @@ the runtime code lands in the next three feature releases.
   — closes the largest detection gap: kernel-vouched signal
   for `execve`, `openat`, `connect`, `ptrace`, `setuid`. Un-
   tamperable by userspace attackers. Falls back to file-tail
-  on older kernels. **Target: v1.1.0.** (Slice 1 scaffolding
-  ships; runtime deferred.)
+  on older kernels. **Target: v1.1.0.** ✅ **Shipped.**
 - **Multi-platform agents** ([ADR-007](docs/decisions/ADR-007-multi-platform-agents.md))
   — Windows Event Log + ETW (opt-in) and macOS Endpoint
   Security Framework. Same wire contract, same HMAC-signed
@@ -121,6 +120,103 @@ the runtime code lands in the next three feature releases.
 - Cybersec review full output: see the Cybersec review
   section in the project's Obsidian vault note
   `Proyek - Cyber Sentinel ZaqorinCore.md`.
+
+## [1.1.0] - 2026-08-29
+
+The eBPF kernel-telemetry backend ([ADR-006](docs/decisions/ADR-006-ebpf-kernel-telemetry.md))
+ships in this release. Five syscall-tracepoint probes
+(`execve`, `openat`, `connect`, `ptrace`, `setuid`) capture
+events at the kernel boundary — un-tamperable by userspace
+attackers — and feed them through the existing detector
+pipeline. The file-tail backend remains the default and
+the runtime fallback for hosts where the kernel is older
+than 5.4 or CAP_BPF is unavailable.
+
+### Added
+
+- **BPF C source** (`agent/internal/ebpf/probes/c/`):
+  - `probes_main.bpf.c` — the single combined probe; includes
+    the five per-syscall monitor files and the shared
+    `events` ring buffer map (256 KiB)
+  - `execve_monitor.c`, `openat_monitor.c`, `connect_monitor.c`,
+    `ptrace_monitor.c`, `setuid_monitor.c` — five `SEC("tracepoint/...")`
+    handlers, one per syscall
+  - `common.h` — shared event struct (`bpf_event`, `bpf_event_hdr`,
+    five per-probe body structs) + minimal `trace_event_raw_sys_enter`
+    stub + `AF_INET`/`AF_INET6` macros to avoid pulling in
+    glibc's `gnu/stubs-32.h` during BPF compilation
+- **bpf2go generation**:
+  - `agent/Makefile` with `make ebpf` (bpf2go via
+    `go run`, embeds the ELF via `go:embed`), `make build`,
+    `make test`, `make clean`, `make check-prereqs`
+  - `agent/internal/ebpf/probes/obj/wrapper.go` —
+    hand-maintained, re-exports bpf2go's package-private
+    `BpfProbes` / `BpfMaps` / `BpfObjects` types so the
+    rest of the agent does not depend on bpf2go's
+    per-version naming
+  - One combined ELF (`zaqorin_probes_bpfel.o`, ~12 KB
+    stripped) for `bpfel/amd64`. Cross-build for
+    `arm64` via `make ebpf ARCH=arm64`
+- **Runtime loader** (`agent/internal/ebpf/loader.go`):
+  - `NewReal(logger, cfg)` — kernel version check (≥ 5.4),
+    `rlimit.RemoveMemlock`, `bpfobj.LoadObjects`,
+    `ringbuf.NewReader`, `link.Tracepoint` ×5, returns
+    `(nil, reason)` on any failure so the caller falls
+    back to `NotImplemented`
+  - `Real.Run(ctx, handler)` — drains the shared ring
+    buffer, decodes each record via the pure-function
+    `decode(raw)`, encodes to the same wire shape the
+    file-tail backend produces
+  - `LoadConfig.Probes` allowlist — operators can disable
+    individual probes at runtime without recompiling
+- **Decoder** (Go side, mirrors C layout):
+  - Five tag dispatch cases (`tagExecve`, `tagOpenat`,
+    `tagConnect`, `tagPtrace`, `tagSetuid`)
+  - Network-byte-order port decode for `connect`
+  - IPv4 / IPv6 dual stack via `IsV6` discriminator
+  - C-string NUL trimming for `comm`, `argv0..argv3`,
+    `filename`
+- **4 integration tests** (`integration_test.go`):
+  - `TestCollectionSpecLoads` — parses the embedded ELF,
+    asserts all 5 programs + the `events` map are present
+  - `TestLoadObjectsFailsWithoutKernel` — CI/dev box path
+    (no CAP_BPF) returns a non-nil error
+  - `TestRingBufferReaderEndToEnd` — 5 sub-tests, one per
+    probe kind, builds a synthetic `bpfEvent` record,
+    feeds it through `decode` + `encodeWire`, asserts the
+    resulting `event.Event` round-trips through JSON
+  - `TestNotImplementedBackend` — fallback path blocks
+    on ctx cancel cleanly, returns `context.DeadlineExceeded`
+- **Operator guide** (`docs/PHASE11-ebpf.md`, ~360 lines):
+  - Host requirements (kernel ≥ 5.4, CAP_BPF, CAP_PERFMON)
+  - Build walkthrough (`make ebpf` with prereq install)
+  - Runtime fallback chain diagram
+  - Per-probe disable instructions
+  - Three-step verification (build, permissions, runtime)
+  - Wire-shape / detector integration notes
+  - Troubleshooting checklist (7 common failure modes)
+
+### Notes
+
+- 235/235 server tests pass (no regression).
+- 12/12 Go agent packages pass (was 10, +2:
+  `agent/internal/ebpf/` decoder tests + integration
+  tests).
+- 9/9 launch smoke + 9/9 live smoke unchanged.
+- `go build ./...` succeeds on every GOOS without a BPF
+  toolchain — the embedded objects are the only path
+  that needs `clang + libbpf-dev + linux-headers`.
+- **Honest gap:** the BPF programs compile cleanly and
+  the CollectionSpec loads in tests, but the runtime
+  attach path (CAP_BPF syscall) was not end-to-end
+  verified on the release host (VPS lacks
+  `cap_bpf,cap_perfmon`). Operators must run
+  `setcap cap_bpf,cap_perfmon=ep /path/to/zaqorin-agent`
+  on each monitored host, then confirm via
+  `bpftool prog list` that five `tracepoint` programs
+  are attached to the agent's PID. The integration
+  test exercises the loader up to (but not including)
+  the kernel `bpf()` syscall.
 
 ## [1.0.0] - 2026-08-28
 
@@ -381,6 +477,7 @@ feature in the README is implemented, tested, and documented.
 
 [Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v1.3.0...HEAD
 [1.3.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...v1.3.0
+[1.1.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.7.0...v0.8.0
