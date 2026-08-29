@@ -775,6 +775,50 @@ BenchmarkDFAStateTransition_SameSubject-2   21,819,103   27.99 ns/op   0 B/op   
 
 [1.7.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.6.2...v1.7.0
 
+## [1.7.1] - 2026-08-29
+
+Hybrid eBPF/XDP L4 + Go L7 EFSM (TUGAS 2).
+
+### What ships in v1.7.1
+
+- **`pkg/decode/`** — strict, zero-alloc
+  L3/L4 wire parser. IPv4, IPv6, TCP, UDP,
+  ICMP, ICMPv6. 8 tests including a
+  0-allocs/op NFR gate.
+- **`pkg/efsm/`** — L7 Extended Finite
+  State Machine. HTTP/1.1 request line
+  + WebSocket frame parser. 6 tests
+  including a 0-allocs/op NFR gate.
+- **`pkg/bridge/`** — wire→engine pipe
+  with `sync.Pool` scratch buffer. End-
+  to-end test pushes a synthetic wire
+  event and asserts the engine emits a
+  status transition.
+
+### Wire format (now a contract)
+
+58-byte fixed header + variable payload,
+padded to 64-byte multiple. See
+`docs/PHASE22-hybrid-ebpf-go-efsm.md` for
+the full layout.
+
+### NFR status
+
+- Decode: 0 B/op, 0 allocs/op
+- EFSM happy path: 0 B/op, 0 allocs/op
+- Engine: 0 B/op, 0 allocs/op (carried
+  over from v1.7.0)
+
+### Honest gap
+
+The kernel-side eBPF/XDP probe was NOT
+modified in this slice. The wire format
+documented in `pkg/decode` is a **contract
+from the Go side**; the next kernel probe
+revision must match it. See PHASE22 §9.
+
+[1.7.1]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.0...v1.7.1
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release
