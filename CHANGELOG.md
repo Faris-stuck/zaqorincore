@@ -627,6 +627,82 @@ $ go test ./internal/telemetry/windows/ -v -run TestPushBackend
 
 [1.6.1]: https://github.com/Faris-stuck/zaqorincore/compare/v1.6.0...v1.6.1
 
+## [1.6.2] - 2026-08-29
+
+App wiring for Windows eventlog push-mode
+(build-tag factory + dispatcher fan-in).
+
+### What ships in v1.6.2
+
+- **`internal/app/windows_eventlog_other.go`**
+  (//go:build !windows): factory returns
+  `(nil, nil)`. Agent runs fine on Linux/macOS.
+- **`internal/app/windows_eventlog_windows.go`**
+  (//go:build windows): factory builds
+  `windows.NewPush(...)`, subscribes it, returns
+  the `WindowsEventlogBackend` adapter.
+- **`internal/app/app.go`**:
+  - New `WindowsEventlogBackend` interface
+    (Run + Close).
+  - `Dependencies` gained
+    `NewWindowsEventlogBackend` field (testable).
+  - `Run` checks `cfg.WindowsEventlog.Mode ==
+    "push"`, calls the factory, defers `Close()`,
+    launches the backend in a goroutine.
+  - Dispatcher: extended `select` to consume
+    from BOTH `lines` (tailers) AND `pushEventOut`
+    (Windows eventlog). "nil channel" shutdown
+    pattern: loop exits cleanly when BOTH close.
+- **1 new test** (`TestRun_ForwardsWindowsEventlogEvents`):
+  fakeWinBackend → 2 events arrive at transport,
+  Close() called on shutdown.
+- **Windows cross-build verified**: `cmd/...` builds
+  cleanly with `CGO_ENABLED=1 GOOS=windows
+  GOARCH=amd64 CC=x86_64-w64-mingw32-gcc`.
+
+### Design choices
+
+- **Build-tag-dispatched factory** instead of
+  `if runtime.GOOS == "windows"` in `app.go`.
+  Avoids pulling `telemetry/windows` into the
+  Linux/macOS cross-build of the agent.
+- **Interface in app.go, impl in build-tag files**
+  keeps `app.go` platform-neutral.
+
+### Verification
+
+```
+$ go test -v ./internal/app/ -run TestRun_
+=== RUN   TestRun_RejectsNilDeps
+--- PASS
+=== RUN   TestRun_ForwardsTailerLinesAsEvents
+--- PASS
+=== RUN   TestRun_ForwardsWindowsEventlogEvents
+--- PASS
+=== RUN   TestRun_PropagatesContextCancel
+--- PASS
+
+$ go test ./...    # full Go agent suite — all PASS
+$ CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+  CC=x86_64-w64-mingw32-gcc go build ./cmd/...
+$ ls -la /tmp/wintest
+-rwxr-xr-x 1 ubuntu ubuntu 7707591
+```
+
+### PITFALLS (recorded in PHASE20)
+
+1. `PushBackend.Run` takes `func([]byte) error`
+   NOT `func(string)`. Returning `ctx.Err()` from
+   inside stops the drain loop cleanly.
+2. `NewPush(hostID, logger)` not `NewPushBackend(...)`.
+3. Build-tag factory must reference the
+   `WindowsEventlogBackend` interface in
+   package `app` (defined in the platform-neutral
+   `app.go`).
+4. `go vet` on a single file = false `undefined`.
+
+[1.6.2]: https://github.com/Faris-stuck/zaqorincore/compare/v1.6.1...v1.6.2
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release

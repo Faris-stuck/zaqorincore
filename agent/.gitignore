@@ -6,3 +6,4 @@
 *.out
 coverage.out
 coverage.html
+/zaqorin-agent.exe

@@ -147,6 +147,94 @@ func TestRun_ForwardsTailerLinesAsEvents(t *testing.T) {
 	}
 }
 
+// fakeWinBackend is a WindowsEventlogBackend that
+// emits a fixed sequence of events into out.
+type fakeWinBackend struct {
+	mu     sync.Mutex
+	closed bool
+}
+
+func (f *fakeWinBackend) Run(ctx context.Context, out chan<- event.Event) {
+	for _, raw := range []string{"<Event>win1</Event>", "<Event>win2</Event>"} {
+		select {
+		case out <- event.New("agent-ctx", "windows:push", raw):
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (f *fakeWinBackend) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
+	return nil
+}
+
+func TestRun_ForwardsWindowsEventlogEvents(t *testing.T) {
+	cfg := &config.Config{
+		ServerURL: "ws://test.invalid",
+		AgentID:   "agent-ctx",
+		LogLevel:  "info",
+		StateDir:  t.TempDir(),
+		DryRun:    true,
+		LogSources: []config.LogSource{},
+		WindowsEventlog: config.WindowsEventlog{
+			Mode: "push",
+		},
+	}
+	tr := newFakeTransport()
+	winBE := &fakeWinBackend{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Dependencies{
+			Config:    cfg,
+			Logger:    quietLogger(),
+			Client:    tr,
+			NewWindowsEventlogBackend: func(_ *config.Config, _ *slog.Logger) (WindowsEventlogBackend, error) {
+				return winBE, nil
+			},
+		})
+	}()
+
+	// Wait for both win events to arrive via the dispatcher.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(tr.snapshot()) >= 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	got := tr.snapshot()
+	if len(got) != 2 {
+		t.Fatalf("transport got %d events, want 2", len(got))
+	}
+	for i, want := range []string{"<Event>win1</Event>", "<Event>win2</Event>"} {
+		if string(got[i].Raw) != want {
+			t.Errorf("event[%d] raw = %q, want %q", i, string(got[i].Raw), want)
+		}
+		if got[i].Source != "windows:push" {
+			t.Errorf("event[%d] source = %q, want windows:push", i, got[i].Source)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+	winBE.mu.Lock()
+	if !winBE.closed {
+		t.Error("fakeWinBackend.Close was not called on shutdown")
+	}
+	winBE.mu.Unlock()
+}
+
 func TestRun_PropagatesContextCancel(t *testing.T) {
 	cfg := &config.Config{
 		ServerURL:  "ws://test.invalid",

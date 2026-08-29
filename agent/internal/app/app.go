@@ -39,6 +39,23 @@ type TailerSource interface {
 	Start(ctx context.Context) (<-chan tailer.Line, error)
 }
 
+// WindowsEventlogBackend is the interface for the
+// optional Windows eventlog subscription. Only
+// constructed when cfg.WindowsEventlog.Mode == "push".
+// The non-Windows build returns (nil, nil) — the agent
+// runs fine without it.
+type WindowsEventlogBackend interface {
+	Run(ctx context.Context, out chan<- event.Event)
+	Close() error
+}
+
+// NewWindowsEventlogBackend is implemented in
+// build-tag-specific files: windows_eventlog_windows.go
+// (real) and windows_eventlog_other.go (no-op).
+// The non-Windows build returns (nil, nil) — the
+// default is a no-op factory. The Windows build
+// returns a real push-mode backend.
+
 // Dependencies bundles everything Run needs. Tests can override any
 // field to inject fakes.
 type Dependencies struct {
@@ -47,6 +64,11 @@ type Dependencies struct {
 	Client         Transport        // optional: if set, used as-is
 	NewTailer      func(src config.LogSource, logger *slog.Logger) TailerSource
 	CommandHandler func(ctx context.Context, cmd transport.Command) (status string, err error)
+	// NewWindowsEventlogBackend is optional. If non-nil,
+	// called when cfg.WindowsEventlog.Mode == "push".
+	// Tests inject a fake; production wires via the
+	// build-tag factory.
+	NewWindowsEventlogBackend func(cfg *config.Config, log *slog.Logger) (WindowsEventlogBackend, error)
 }
 
 // Run starts every tailer, opens the transport, and forwards lines
@@ -89,6 +111,26 @@ func Run(ctx context.Context, deps Dependencies) error {
 	// failure; we only need to call Run once per process.
 	go tr.Run(ctx)
 
+	// Windows eventlog push-mode: optional, only if
+	// configured. Runs in a goroutine that fans events
+	// into the same dispatcher channel as the tailers.
+	pushEventOut := make(chan event.Event, 1024)
+	if deps.Config.WindowsEventlog.Mode == "push" {
+		newFn := deps.NewWindowsEventlogBackend
+		if newFn == nil {
+			newFn = NewWindowsEventlogBackend
+		}
+		be, err := newFn(deps.Config, logger)
+		if err != nil {
+			logger.Warn("app: windows eventlog push-mode start failed (continuing with tailers only)",
+				slog.String("error", err.Error()),
+			)
+		} else if be != nil {
+			defer be.Close()
+			go be.Run(ctx, pushEventOut)
+		}
+	}
+
 	// Fan in: every tailer writes into a single channel that the
 	// dispatcher drains. Channel buffer of 1024 is large enough for
 	// a few minutes of auth.log on a busy host without dropping.
@@ -120,7 +162,8 @@ func Run(ctx context.Context, deps Dependencies) error {
 		}(ch)
 	}
 
-	// Dispatcher: turn each line into an event and ship it.
+	// Dispatcher: turn each line OR each Windows event
+	// into an event and ship it.
 	dispatchDone := make(chan struct{})
 	go func() {
 		defer close(dispatchDone)
@@ -130,11 +173,29 @@ func Run(ctx context.Context, deps Dependencies) error {
 				return
 			case l, ok := <-lines:
 				if !ok {
-					return
+					lines = nil // disable this case
+					if pushEventOut == nil {
+						return
+					}
+					continue
 				}
 				ev := event.New(deps.Config.AgentID, l.Source, string(l.Raw))
 				if err := tr.Send(ctx, ev); err != nil {
 					logger.Debug("app: send failed",
+						slog.String("event_id", ev.ID),
+						slog.String("error", err.Error()),
+					)
+				}
+			case ev, ok := <-pushEventOut:
+				if !ok {
+					pushEventOut = nil // disable this case
+					if lines == nil {
+						return
+					}
+					continue
+				}
+				if err := tr.Send(ctx, ev); err != nil {
+					logger.Debug("app: send push event failed",
 						slog.String("event_id", ev.ID),
 						slog.String("error", err.Error()),
 					)
