@@ -189,6 +189,7 @@ class CompiledSigmaRule:
     cooldown_sec: int
     dedup_key: str
     action: dict[str, Any] | None
+    required_fields: tuple[str, ...] = ()  # v1.4.z: fields that MUST be present
 
     def matches(self, event: ParsedEvent) -> bool:
         """Single-event matching. The runner is responsible for
@@ -205,6 +206,15 @@ class CompiledSigmaRule:
           AND-NOT filter must NOT match
         """
         cond = self.condition
+        # v1.4.z: strict missing-field fail-safe. If a rule declares
+        # `required_fields`, all must be present in event metadata —
+        # otherwise we cannot prove the rule's condition, so the rule
+        # does NOT fire (fail-closed). This prevents noise from
+        # agents that don't yet emit a particular metadata key.
+        if self.required_fields:
+            for field in self.required_fields:
+                if field not in event.metadata:
+                    return False
         # Pattern 1: `selection`
         if cond == "selection":
             return _match_selection(event, self.selection)
@@ -341,6 +351,14 @@ def _compile(raw: dict[str, Any], path: Path) -> CompiledSigmaRule:
     action = raw.get("action")
     if action is not None and not isinstance(action, dict):
         raise SigmaRuleLoadError(path, "'action' must be a mapping")
+    # v1.4.z: required_fields — list of metadata keys that MUST
+    # be present for the rule to fire. Fail-closed semantics.
+    required_fields_raw = raw.get("required_fields", [])
+    if not isinstance(required_fields_raw, list):
+        raise SigmaRuleLoadError(
+            path, "'required_fields' must be a list of strings"
+        )
+    required_fields = tuple(str(f) for f in required_fields_raw)
     return CompiledSigmaRule(
         id=rule_id,
         title=title,
@@ -353,6 +371,7 @@ def _compile(raw: dict[str, Any], path: Path) -> CompiledSigmaRule:
         cooldown_sec=cooldown_sec,
         dedup_key=dedup_key,
         action=action,
+        required_fields=required_fields,
     )
 
 

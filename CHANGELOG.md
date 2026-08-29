@@ -319,6 +319,69 @@ regressions)
 
 [1.4.y]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.x...v1.4.y
 
+## [1.4.z] - 2026-08-29
+
+The Sigma engine gains a strict fail-closed mechanism
+for rules that depend on metadata not universally
+emitted by all agents
+([ADR-011](docs/decisions/ADR-011-required-fields.md)).
+
+### Engine: `required_fields` rule attribute
+
+Rules can now declare a `required_fields` top-level
+key listing metadata keys that MUST be present in
+the event for the rule to fire:
+
+```yaml
+id: builtin-windows-4720-account-create
+level: high
+required_fields:
+  - metadata.hour
+detection: ...
+```
+
+If any of the listed fields is missing from the
+event metadata, the rule does NOT fire
+(fail-CLOSED). Rules without `required_fields`
+are unaffected (backwards-compatible default:
+empty tuple).
+
+The check runs BEFORE condition dispatch, so
+`required_fields` works with all compound
+condition patterns from v1.4.y.
+
+### T1136 upgrade
+
+T1136 now declares `required_fields:
+[metadata.hour]`. The v1.4.y off-hours rule was
+fail-OPEN for agents that don't send
+`metadata.hour` (older firmware, no timezone
+context). v1.4.z is fail-CLOSED: if the agent
+can't prove the event was off-hours, the rule
+doesn't fire. Operators can detect "rule not
+firing" via hit-rate metrics and fix the agent.
+
+### Breaking change for tests
+
+The v1.4.0 T1136 test (`test_t1136_fires_on_account_create`)
+relied on fail-OPEN semantics (passed no
+`metadata.hour`, expected fire). v1.4.z breaks
+that contract — the test now passes
+`metadata.hour: "23"` (off-hours) explicitly.
+This is NOT a runtime break for the rule
+itself, only for the test fixture.
+
+### Test count
+
+```
+303 server pytest PASS
+```
+
+(was 294 in v1.4.y → 303 in v1.4.z, +9 new
+`required_fields` tests, 0 regressions)
+
+[1.4.z]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.y...v1.4.z
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release

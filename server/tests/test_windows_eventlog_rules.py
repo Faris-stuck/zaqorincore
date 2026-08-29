@@ -330,6 +330,7 @@ async def test_t1136_fires_on_account_create() -> None:
             "windows.security.4720",
             target_user_name="svc_backup",
             pid=5555,
+            **{"metadata.hour": "23"},  # off-hours
         )
     )
     assert len(fires) == 1
