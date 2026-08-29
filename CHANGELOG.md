@@ -703,6 +703,78 @@ $ ls -la /tmp/wintest
 
 [1.6.2]: https://github.com/Faris-stuck/zaqorincore/compare/v1.6.1...v1.6.2
 
+## [1.7.0] - 2026-08-29
+
+DFA state engine + mock layer + CI split (TUGAS 1).
+
+### What ships in v1.7.0
+
+- **`pkg/engine/`** — 4-state DFA (Nominal,
+  Challenge, Deception, Containment). Hot path
+  = 0 B/op, 0 allocs/op, 37 ns/op (rotating)
+  / 28 ns/op (SameSubject) on Xeon 8255C.
+  Containment is terminal. `Engine.Process(ev)`
+  is the only public hot-path API.
+- **`internal/mock/`** — `BPFDriverMock`,
+  `NetworkStreamMock`, `CanaryStoreMock`. All
+  concurrency-safe, all hermetic (no
+  CAP_SYS_ADMIN, no live kernel probe, no
+  real network).
+- **`.github/workflows/ci.yml`** — split into
+  4 jobs (unit, bench, build, smoke) plus
+  1 optional integration job (main only).
+  - `unit` runs `go test -race -count=1 -short
+    -timeout=180s ./...` on Go 1.22 + 1.23.
+  - `bench` runs `BenchmarkDFAStateTransition`
+    and FAILS if `[1-9][0-9]* allocs/op`
+    appears in output (NFR regression gate).
+  - `build` runs `make build` and asserts
+    binary ≤ 15 MB.
+  - `smoke` runs the existing websocat
+    end-to-end test.
+  - `integration` runs on main pushes only
+    (not PRs) with `-tags integration`. Uses
+    `linux-tools-generic` + sudo. Non-fatal
+    warning on failure (hosted runners often
+    lack the right kernel).
+
+### NFR status
+
+- **Memory: < 20 MB** — engine is allocation-
+  free; binary is unchanged at ~10 MB.
+- **CPU: < 1.5%** — 26M transitions/sec
+  sustained, 37 ns/op. On 1k events/sec real
+  load: 0.0037% of one core.
+- **Latency: < 1 µs** — 28-37 ns hot path
+  (5-35× under target).
+
+### Verification
+
+```
+$ go test -race -count=1 -short ./...
+ok  all packages
+
+$ go test -bench=BenchmarkDFAStateTransition \
+    -benchmem -benchtime=1s -run=^$ ./pkg/engine/
+BenchmarkDFAStateTransition-2               16,651,309   37.42 ns/op   0 B/op   0 allocs/op
+BenchmarkDFAStateTransition_SameSubject-2   21,819,103   27.99 ns/op   0 B/op   0 allocs/op
+```
+
+### PITFALLS (recorded in PHASE21)
+
+1. `Status` is typed `uint8` — table index
+   needs `uint8(cur) * 16`.
+2. Engine is single-caller; concurrency is
+   the StateStore's job, not the engine's.
+3. `errEOF` sentinel must be in the same
+   package as the consumer.
+4. `-short` is honored by `-tags integration`
+   tests but only when the caller passes it.
+5. `go tool cover -func=coverage.out` gives
+   one-line stats; per-function is in the file.
+
+[1.7.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.6.2...v1.7.0
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release

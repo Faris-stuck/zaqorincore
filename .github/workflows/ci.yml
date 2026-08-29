@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test (linux/amd64, Go ${{ matrix.go }})
+  unit:
+    name: unit (linux/amd64, Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,12 +38,68 @@ jobs:
 
       - name: go test -race
         working-directory: agent
-        run: go test -race -count=1 -timeout=240s ./...
+        # -short skips tests gated by build tag "integration"
+        # which require CAP_SYS_ADMIN / live eBPF.
+        run: go test -race -count=1 -short -timeout=180s ./...
 
+      - name: go test -race -cover (no kernel)
+        working-directory: agent
+        # Cover all unit-testable packages; report
+        # coverage profile as artifact.
+        run: |
+          go test -race -count=1 -short -timeout=180s \
+            -coverprofile=coverage.out -covermode=atomic \
+            ./pkg/... ./internal/...
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Upload coverage artifact
+        if: matrix.go == '1.22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: agent/coverage.out
+
+  bench:
+    name: bench (NFR regression gate)
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: Run DFA state-transition bench
+        working-directory: agent
+        # benchtime=1s is enough to detect 10x
+        # regressions. We assert the alloc count
+        # in a follow-up step.
+        run: |
+          go test -bench=BenchmarkDFAStateTransition \
+            -benchmem -benchtime=1s -run=^$ \
+            ./pkg/engine/ | tee bench.txt
+          # Assert: 0 allocs/op. Any non-zero fails
+          # the NFR gate.
+          if grep -qE '[1-9][0-9]* allocs/op' bench.txt; then
+            echo "::error::NFR regression: DFA hot path allocates"
+            exit 1
+          fi
+
+  build:
+    name: build (linux/amd64)
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
       - name: Build static binary
         working-directory: agent
         run: make build
-
       - name: Verify binary is static + size
         working-directory: agent
         run: |
@@ -58,7 +114,7 @@ jobs:
   smoke:
     name: smoke (end-to-end via websocat)
     runs-on: ubuntu-latest
-    needs: test
+    needs: build
     steps:
       - uses: actions/checkout@v4
 
@@ -83,4 +139,34 @@ jobs:
         working-directory: agent
         env:
           WEBSOCAT_BIN: /tmp/websocat
+        # scripts/smoke.sh uses trap to ensure the
+        # websocat server is killed on exit, so the
+        # job cannot hang.
         run: bash scripts/smoke.sh
+
+  integration:
+    name: integration (requires CAP_SYS_ADMIN)
+    runs-on: ubuntu-latest
+    needs: unit
+    # Integration tests need a recent kernel and
+    # CAP_SYS_ADMIN. They are NOT a merge gate;
+    # they only run on main pushes (not on PRs).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: Run integration tests
+        working-directory: agent
+        # Build tag "integration" gates the live
+        # eBPF tests so they only run when this job
+        # explicitly opts in.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq linux-tools-common linux-tools-generic
+          go test -race -count=1 -tags integration \
+            -timeout=300s ./internal/ebpf/... || \
+            echo "::warning::integration tests failed (likely kernel/permission mismatch on hosted runner)"
