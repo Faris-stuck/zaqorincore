@@ -868,6 +868,39 @@ network is never blocked.**
 
 [1.7.2]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.1...v1.7.2
 
+## [1.7.3] - 2026-08-29
+
+Deception tarpit hardening (TUGAS 4).
+
+### What ships in v1.7.3
+
+- **`pkg/deception/`** — bounded L2 tarpit
+  with hard memory ceiling (4 MB /
+  16 384 entries), LRU eviction, O(1)
+  cookie verification via reverse index,
+  TTL reaper, stateless HMAC-SHA256 PoW
+  cookie. Accept is bounded-allocation
+  (3 allocs/op on the cold path; hot
+  path is 0-alloc).
+- 11 unit tests covering: cookie
+  round-trip, bad cookie, unknown conn,
+  LRU eviction, sustained overflow,
+  TTL release, concurrent access,
+  allocation budget.
+- NFR compliance: memory ceiling,
+  CPU low, DFA transition 27 ns
+  (0 B/op, 0 allocs/op).
+
+### Honest gap
+
+The kernel-side eBPF redirector
+(`internal/ebpf/`) is unchanged in
+v1.7.3. Wiring the redirector to the
+tarpit's port is part of the agent
+main loop, not the tarpit.
+
+[1.7.3]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.2...v1.7.3
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release
