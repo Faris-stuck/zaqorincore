@@ -1,0 +1,59 @@
+title: Windows PowerShell EncodedCommand (T1059.001)
+id: builtin-windows-4688-powershell-encoded
+description: |
+  Detects a process (Event ID 4688) whose command line
+  contains `EncodedCommand` (PowerShell's standard encoded-
+  payload flag) or the shorter `-Enc` / `-E ` aliases.
+
+  This is the rule that v1.4.0 deferred because the engine
+  lacked the `|startswith` modifier needed to scope the
+  match to PowerShell-as-the-launcher. v1.4.x ships the
+  modifier support (ADR-009) but the `selection and (X or Y)`
+  OR condition is not yet supported by the matcher. This
+  rule therefore ships as a `contains:` match on the cmdline
+  flag string, which catches real-world attacker use (the
+  flag is PowerShell-specific) but will also fire on the
+  rare case of a non-PowerShell process whose command line
+  happens to contain the literal "EncodedCommand".
+
+  For a stricter PowerShell-only scope, operators can
+  override this rule in `rules.local_overrides/` and add
+  a `parent_process_name: powershell.exe` clause to the
+  selection dict.
+
+  Detection:
+    - source == "windows.security.4688"
+    - command_line contains "EncodedCommand", "-Enc ", or " -E "
+  Required GPO: "Include command line in process creation
+  events" must be enabled (see PHASE12-windows.md).
+
+  Mapping:
+    ATT&CK T1059.001 (PowerShell)
+    ATT&CK T1027 (Obfuscated Files or Information)
+    ATT&CK T1140 (Deobfuscate/Decode Files or Information)
+    PCI DSS 10.2.1 (Audit logs capture individual user access)
+    ISO 27001 A.5.7 (Threat intelligence)
+tags:
+  - attack.t1059.001
+  - attack.t1027
+  - attack.t1140
+  - attack.execution
+  - attack.defense_evasion
+  - compliance.pci_dss.req10
+  - compliance.iso27001.A5.7
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+  - https://attack.mitre.org/techniques/T1027/
+  - https://attack.mitre.org/techniques/T1140/
+level: high
+detection:
+  selection:
+    source: "windows.security.4688"
+    command_line: "contains:EncodedCommand"
+  condition: selection
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 600
+dedup_key: "{{pid}}"

@@ -92,7 +92,17 @@ def _match_selection(event: ParsedEvent, selection: dict[str, Any]) -> bool:
             if actual not in expected:
                 return False
         elif isinstance(expected, str):
-            if expected.startswith("re:"):
+            # Sigma spec modifier syntax: `field|modifier: value`.
+            # Checked first so that values starting with `re:` or
+            # `contains:` (which also contain `:`) don't accidentally
+            # match this branch. The `field` portion is redundant
+            # here (the caller already passed the key) but is kept
+            # in the syntax for spec compatibility — operators can
+            # drop unmodified SigmaHQ rules into the engine.
+            if _is_modifier_value(expected):
+                if not _match_modifier(actual, expected):
+                    return False
+            elif expected.startswith("re:"):
                 pattern = expected[3:]
                 if not re.search(pattern, str(actual)):
                     return False
@@ -107,6 +117,61 @@ def _match_selection(event: ParsedEvent, selection: dict[str, Any]) -> bool:
             if actual != expected:
                 return False
     return True
+
+
+def _is_modifier_value(value: str) -> bool:
+    """Return True if `value` looks like a Sigma spec modifier
+    expression `field|modifier: literal`.
+
+    The first `|` splits field/modifier, and the modifier part
+    must contain `:` to be a modifier (not a literal pipe).
+    The supported modifiers are: startswith, endswith, ge, lt.
+    """
+    if "|" not in value:
+        return False
+    _, _, mod_spec = value.partition("|")
+    if ":" not in mod_spec:
+        return False
+    mod, _, _ = mod_spec.partition(":")
+    return mod in ("startswith", "endswith", "ge", "lt")
+
+
+def _match_modifier(actual: Any, value: str) -> bool:
+    """Apply a single Sigma spec modifier.
+
+    The supported modifiers are:
+      - `field|startswith: literal` — case-sensitive prefix match
+      - `field|endswith: literal` — case-sensitive suffix match
+      - `field|ge: number` — actual >= number (float compare)
+      - `field|lt: number` — actual < number (float compare)
+
+    A non-numeric actual for `ge`/`lt` returns False (fail-safe:
+    no false-positive alert from a malformed rule). A non-string
+    actual for `startswith`/`endswith` is stringified first.
+
+    The literal value is stripped of leading/trailing whitespace
+    so operators can write `startswith: powershell ` (with a
+    trailing space) and have it work as expected.
+    """
+    _, _, mod_spec = value.partition("|")
+    mod, _, lit = mod_spec.partition(":")
+    lit = lit.strip()
+    if mod == "startswith":
+        return str(actual).startswith(lit)
+    if mod == "endswith":
+        return str(actual).endswith(lit)
+    if mod == "ge":
+        try:
+            return float(actual) >= float(lit)
+        except (TypeError, ValueError):
+            return False
+    if mod == "lt":
+        try:
+            return float(actual) < float(lit)
+        except (TypeError, ValueError):
+            return False
+    # Unknown modifier — _is_modifier_value should have screened.
+    return False
 
 
 @dataclass(frozen=True)

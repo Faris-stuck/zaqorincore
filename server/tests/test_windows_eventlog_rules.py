@@ -358,7 +358,11 @@ async def test_t1136_does_not_fire_on_logon_event() -> None:
 
 
 def test_windows_eventlog_rules_load() -> None:
-    """All 5 Windows rules load and have the required fields."""
+    """All Windows rules load and have the required fields.
+
+    v1.4.0 shipped 5; v1.4.x adds 2 more (PowerShell EncodedCommand
+    and PowerShell DownloadString), so 7 total.
+    """
     rules = _windows_rules()
     ids = {r.id for r in rules}
     assert "builtin-windows-4625-brute-force" in ids
@@ -366,7 +370,10 @@ def test_windows_eventlog_rules_load() -> None:
     assert "builtin-windows-lsass-read" in ids
     assert "builtin-windows-4732-priv-group-add" in ids
     assert "builtin-windows-4720-account-create" in ids
-    assert len(rules) == 5
+    # v1.4.x additions
+    assert "builtin-windows-4688-powershell-encoded" in ids
+    assert "builtin-windows-4688-powershell-download" in ids
+    assert len(rules) == 7
     for r in rules:
         assert r.title
         assert r.level in ("low", "medium", "high", "critical")

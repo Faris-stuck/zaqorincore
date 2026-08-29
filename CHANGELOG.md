@@ -38,6 +38,14 @@ the runtime code lands in the next three feature releases.
   **Shipped.** (10+ more rules from the ROADMAP deferred
   to v1.4.x pending Sigma engine `|startswith`/`|endswith`
   modifier support — see PHASE13 §3 and §7.)
+- **Sigma engine modifier support** ([ADR-009](docs/decisions/ADR-009-sigma-modifier-support.md))
+  — adds `|startswith`, `|endswith`, `|ge`, `|lt` to
+  `_match_field` (Sigma spec modifier syntax). Unlocks
+  2 more Windows rules (T1059.001 PowerShell EncodedCommand,
+  T1105 PowerShell DownloadString) shipped in the same
+  release. **Target: v1.4.x.** ✅ **Shipped.** (OR/AND
+  condition parsing still deferred to v1.4.y; off-hours
+  filter for T1136 blocked on that — see PHASE14 §4.)
 - **SOAR webhook delivery** ([ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md))
   — six backends ship (generic webhook, Slack, Discord,
   PagerDuty, TheHive, Jira) with dead-letter + replay.
@@ -198,6 +206,64 @@ modifier support). See `docs/PHASE13-windows-rules.md`
   real-Windows integration smoke test after upgrading.
 
 [1.4.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.2.0...v1.4.0
+
+## [1.4.x] - 2026-08-29
+
+The Sigma engine modifier support ([ADR-009](docs/decisions/ADR-009-sigma-modifier-support.md))
+ships in this release. The engine's `_match_field` learned
+4 new modifiers in the Sigma spec syntax
+(`field|modifier: value`):
+
+| Modifier | Example | Use |
+|---|---|---|
+| `\|startswith` | `command_line\|startswith: powershell ` | case-sensitive prefix match |
+| `\|endswith` | `target_filename\|endswith: lsass.exe` | case-sensitive suffix match |
+| `\|ge` | `hour\|ge: 22` | numeric ≥ |
+| `\|lt` | `hour\|lt: 6` | numeric < |
+
+The modifier parser is backwards-compatible: existing
+rules with `re:` and `contains:` continue to work
+unchanged.
+
+### 2 new Windows rules enabled by the modifiers
+
+| Rule ID | ATT&CK | Event ID | Level | Action |
+|---|---|---|---|---|
+| `builtin-windows-4688-powershell-encoded` | T1059.001 / T1027 / T1140 | 4688 | high | `snapshot_processes` |
+| `builtin-windows-4688-powershell-download` | T1059.001 / T1105 | 4688 | high | `snapshot_processes` |
+
+Both rules are tested on Linux (selection/dedup/cooldown/
+count-in-window/action-rendering all exercised) but the
+GPO dependency "Include command line in process creation
+events" still applies — see PHASE12-windows.md.
+
+### Scope limitation
+
+The engine's `condition` parser does not yet handle
+`selection and (X or Y)` or `selection and not filter`
+fully. The `not filter` part is silently dropped. This
+blocks the off-hours filter for the T1136 account-create
+rule (which needs `hour|ge: 22 OR hour|lt: 6`) and
+prevents the 2 PowerShell rules from being scoped to
+`parent_process_name: powershell.exe`. Tracked as v1.4.y
+follow-up.
+
+### Test results
+
+```
+$ pytest tests/test_sigma_modifiers.py
+27 passed, 1 skipped in 0.39s
+
+$ pytest tests/test_powershell_rules.py
+4 passed in 0.21s
+
+$ pytest  # full server suite
+282 passed in 20.14s
+```
+
+(was 250 in v1.4.0 → 282 in v1.4.x, +32 new tests)
+
+[1.4.x]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.0...v1.4.x
 
 ## [1.2.0] - 2026-08-29
 
