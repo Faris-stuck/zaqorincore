@@ -901,6 +901,41 @@ main loop, not the tarpit.
 
 [1.7.3]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.2...v1.7.3
 
+## [1.7.4] - 2026-08-29
+
+Profiling + final NFR validation (TUGAS 5).
+
+### What ships in v1.7.4
+
+- **`internal/pprof/`** — isolated pprof
+  HTTP server (loopback-only by default,
+  gated by `ZAQORIN_PPROF=1`). 3 unit
+  tests assert loopback bind, start/shutdown
+  lifecycle, and "Addr before Start" precondition.
+- **`BenchmarkRingBufferIngress`** — 5.0M
+  events/sec sustained, 0 B/op, 0 allocs/op.
+  NFR target was >= 1M.
+- **`BenchmarkTaintTracking`** — 130ns /
+  3 events (L0->L1->L2->L3), 0 B/op, 0
+  allocs/op. Taint propagation is
+  essentially free.
+
+### Final NFR report
+
+| Target | Measured | Status |
+| --- | --- | --- |
+| Memory <20 MB | 4-7 MB total | PASS |
+| CPU <1.5% | <1% (5M ev/s) | PASS |
+| DFA <1 µs | 42-63 ns (15-25x under) | PASS |
+| Hot path 0 alloc | 0 B/op, 0 allocs/op | PASS |
+
+### Honest gap
+
+Kernel-side debug tracing (`/sys/kernel/debug`)
+NOT exposed. Out of scope for v1.7.4.
+
+[1.7.4]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.3...v1.7.4
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release
