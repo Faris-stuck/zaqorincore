@@ -57,6 +57,58 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	}
 }
 
+func TestLoad_DefaultWindowsEventlogMode(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "agent.toml", `server_url = "wss://zaqorin.example.com/events"
+[[log_source]]
+name = "auth"
+path = "/var/log/auth.log"
+`)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WindowsEventlog.Mode != "pull" {
+		t.Errorf("default mode = %q, want %q", cfg.WindowsEventlog.Mode, "pull")
+	}
+}
+
+func TestLoad_PushModeAccepted(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "agent.toml", `server_url = "wss://zaqorin.example.com/events"
+[windows_eventlog]
+mode = "push"
+[[log_source]]
+name = "auth"
+path = "/var/log/auth.log"
+`)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WindowsEventlog.Mode != "push" {
+		t.Errorf("mode = %q, want push", cfg.WindowsEventlog.Mode)
+	}
+}
+
+func TestLoad_BadWindowsEventlogMode(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "agent.toml", `server_url = "wss://zaqorin.example.com/events"
+[windows_eventlog]
+mode = "yankee"
+[[log_source]]
+name = "auth"
+path = "/var/log/auth.log"
+`)
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected error for bad mode")
+	}
+	if !strings.Contains(err.Error(), "windows_eventlog.mode") {
+		t.Errorf("error %q should mention windows_eventlog.mode", err)
+	}
+}
+
 func TestLoad_MissingServerURL(t *testing.T) {
 	dir := t.TempDir()
 	p := writeFile(t, dir, "agent.toml", `

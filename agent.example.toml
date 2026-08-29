@@ -24,6 +24,19 @@ path = "/var/log/auth.log"
 name = "nginx_access"
 path = "/var/log/nginx/access.log"
 
+# --- Windows Event Log backend (Windows hosts only) ---
+# v1.6.0 added push mode: kernel callback delivers events
+# the moment they are written, sub-millisecond latency
+# (vs. 1s polling in pull mode). Requires Windows 10
+# 1903+ for the EvtSubscribe callback API. Defaults to
+# "pull" so existing deployments keep working.
+#
+# mode = "push"  # lower latency, requires MinGW-compiled
+#                # CGO build of the agent; not enabled
+#                # in v1.6.0 yet — see PHASE18.
+[windows_eventlog]
+mode = "pull"
+
 # --- Auto-response escalation ---
 # The server may send signed block_ip commands. This block controls what
 # the agent is allowed to apply. Anything not listed is refused.

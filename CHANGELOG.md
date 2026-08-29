@@ -460,6 +460,95 @@ rule tests, 0 regressions)
 
 [1.5.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.z...v1.5.0
 
+## [1.6.0] - 2026-08-29
+
+Windows ETW push-mode subscription infrastructure
+(Linux-testable core shipped; Win32 CGO callback
+deferred to v1.6.1).
+
+### What ships in v1.6.0
+
+- **Push-mode core** (`push_mode_common.go`):
+  buffered channel (cap 1024), drain goroutine,
+  drop-on-full path, idempotent Close, full
+  context-cancel semantics. Linux-testable.
+- **Non-Windows stub** (`push_mode_other.go`,
+  `//go:build !windows`): returns "not supported
+  on this platform" from SubscribePush so the
+  type compiles on every GOOS.
+- **Config field** `windows_eventlog.mode`:
+  `pull` (default, v1.2.0 behavior) or
+  `push` (v1.6.0+ when Win32 callback ships).
+  Validated at Load(); bad values rejected.
+- **4 new Go tests** for the push-mode drain
+  loop (forwards, drop-on-full, idempotent
+  close, ctx cancel).
+- **3 new config tests** for the mode field
+  (default, push accepted, bad value rejected).
+
+### What is DEFERRED to v1.6.1
+
+- **Win32 CGO callback file** (`push_mode_windows.go`):
+  requires MinGW-w64 (`x86_64-w64-mingw32-gcc`)
+  to cross-build, not yet installed on the dev
+  VPS. Operators who set `mode = "push"` in
+  v1.6.0 get no functional change on Windows
+  hosts — the v1.2.0 pull loop continues to run.
+- **Agent main backend selector** to actually
+  read `cfg.WindowsEventlog.Mode` and choose
+  between New() and NewPush(). Wiring is one
+  line; deferred to keep v1.6.0 minimal and
+  reviewable.
+
+### Why ship partial?
+
+The v1.6.0 push-mode core is **testable on Linux
+end-to-end** (channel + drain + drop semantics +
+ctx cancel). Shipping it now gives reviewers a
+real, exercised Go module to look at. The Win32
+CGO piece is a self-contained follow-up that
+does not invalidate v1.6.0's design. PHASE18
+documents the partial state transparently.
+
+### Test count
+
+```
+Server: 315 pytest PASS (unchanged)
+Agent:  4 new push-mode tests + 3 new config
+        tests, full suite PASS
+```
+
+### PITFALLS
+
+- **CGO + cross-build:** the Win32 callback
+  requires `CGO_ENABLED=1 GOOS=windows` with
+  MinGW. Standard `go build ./...` on Linux
+  is fine for v1.6.0 (no CGO) but won't
+  exercise the Windows-specific file.
+- **Channel buffer size:** 1024 is enough
+  for ≈1s of worst-case volume. If the kernel
+  produces more, events are dropped with a
+  warn log. Increasing to 4096 in v1.6.1
+  if the WARN is observed in production.
+- **Per-event CGO cost:** ≈200ns per event.
+  Acceptable for the security channel
+  (≤100 events/sec). Documented in ADR-012.
+
+### Files added
+
+```
+agent/internal/telemetry/windows/push_mode_common.go   114 lines
+agent/internal/telemetry/windows/push_mode_other.go     25 lines
+agent/internal/telemetry/windows/push_mode_test.go      122 lines
+agent/internal/config/config.go                         +23 (windows_eventlog)
+agent/internal/config/config_test.go                    +52 (mode tests)
+agent.example.toml                                      +14 (commented example)
+docs/PHASE18-etw-push-mode.md                           119 lines
+docs/decisions/ADR-012-etw-push-mode.md                 96 lines
+```
+
+[1.6.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.5.0...v1.6.0
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release

@@ -27,6 +27,17 @@ type LogSource struct {
 	Path string `toml:"path"`
 }
 
+// WindowsEventlog configures the Windows Event Log backend
+// (Windows hosts only). v1.6.0 adds `mode = "push"` for
+// lower-latency event delivery via EvtSubscribe callback;
+// `mode = "pull"` (the default) uses the v1.2.0 poll loop
+// at the configured interval.
+type WindowsEventlog struct {
+	// Mode is "pull" (default) or "push". Any other
+	// value is rejected at Load() time.
+	Mode string `toml:"mode"`
+}
+
 // Response controls which auto-response actions the agent is allowed
 // to apply. Phase 1 ignores this (no response side is wired up), but the
 // field is parsed so existing operator configs keep working in Phase 4.
@@ -41,14 +52,15 @@ type Response struct {
 // Defaults are applied during Load(); the zero value is NOT a valid
 // config (server_url is required).
 type Config struct {
-	ServerURL  string      `toml:"server_url"`
-	AgentID    string      `toml:"agent_id"`
-	AuthToken  string      `toml:"auth_token"`
-	LogLevel   string      `toml:"log_level"`
-	StateDir   string      `toml:"state_dir"`
-	DryRun     bool        `toml:"dry_run"`
-	LogSources []LogSource `toml:"log_source"`
-	Response   Response    `toml:"response"`
+	ServerURL        string           `toml:"server_url"`
+	AgentID          string           `toml:"agent_id"`
+	AuthToken        string           `toml:"auth_token"`
+	LogLevel         string           `toml:"log_level"`
+	StateDir         string           `toml:"state_dir"`
+	DryRun           bool             `toml:"dry_run"`
+	LogSources       []LogSource      `toml:"log_source"`
+	Response         Response         `toml:"response"`
+	WindowsEventlog  WindowsEventlog  `toml:"windows_eventlog"`
 }
 
 // validLogLevels are the levels the agent's logger accepts. We map
@@ -79,6 +91,9 @@ func Defaults() Config {
 		Response: Response{
 			AllowBlockIP:       true,
 			BlockDefaultTTLSec: 3600,
+		},
+		WindowsEventlog: WindowsEventlog{
+			Mode: "pull",
 		},
 	}
 }
@@ -171,6 +186,11 @@ func (c *Config) validate() error {
 
 	if c.Response.BlockDefaultTTLSec < 0 {
 		return fmt.Errorf("response.block_default_ttl_sec must be >= 0, got %d", c.Response.BlockDefaultTTLSec)
+	}
+
+	// v1.6.0: Windows Event Log mode validation.
+	if c.WindowsEventlog.Mode != "" && c.WindowsEventlog.Mode != "pull" && c.WindowsEventlog.Mode != "push" {
+		return fmt.Errorf("windows_eventlog.mode must be one of pull|push, got %q", c.WindowsEventlog.Mode)
 	}
 	return nil
 }
