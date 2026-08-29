@@ -1,6 +1,6 @@
 # ADR-007: Multi-platform agents (Windows + macOS) — v1.2
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-28
 **Authors:** ZaqorinCore maintainers
 **Supersedes:** none

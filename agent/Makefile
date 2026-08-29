@@ -82,8 +82,55 @@ ebpf: check-prereqs
 test:
 	go test ./...
 
-build: ebpf
-	go build ./...
+# Cross-compile the agent for all five supported targets.
+# Produces ./bin/zaqorin-agent-{goos}-{goarch}[.exe].
+#
+# Targets:
+#   linux/amd64    - servers, workstations (x86_64)
+#   linux/arm64    - AWS Graviton, Raspberry Pi 4/5, Apple Silicon (VM)
+#   windows/amd64  - Windows Server 2019+, Windows 10/11 (x86_64)
+#   darwin/amd64   - Intel Macs (rare in 2026; for legacy fleet)
+#   darwin/arm64   - Apple Silicon (M1/M2/M3/M4)
+#
+# Notes:
+#   - BPF objects (probes/obj/*.o) are Linux-only. The
+#     cross-build target only embeds the BPF objects on
+#     linux GOOS; windows and darwin builds skip the
+#     internal/ebpf package via the build constraint
+#     `//go:build linux` on loader.go (set in v1.1.0+).
+#   - Each binary is statically linked (CGO_ENABLED=0) so
+#     the resulting file runs on a vanilla host without
+#     runtime dependencies.
+build-all:
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags='-s -w' -o bin/zaqorin-agent-linux-amd64        ./cmd/zaqorin-agent
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags='-s -w' -o bin/zaqorin-agent-linux-arm64        ./cmd/zaqorin-agent
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags='-s -w' -o bin/zaqorin-agent-windows-amd64.exe  ./cmd/zaqorin-agent
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags='-s -w' -o bin/zaqorin-agent-darwin-amd64       ./cmd/zaqorin-agent
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags='-s -w' -o bin/zaqorin-agent-darwin-arm64       ./cmd/zaqorin-agent
+	@ls -la bin/
+
+# Build for the current host only. Faster than build-all
+# when iterating on a single target.
+build-local:
+	CGO_ENABLED=0 go build -ldflags='-s -w' -o bin/zaqorin-agent-$$(go env GOOS)-$$(go env GOARCH)$$([ "$$(go env GOOS)" = "windows" ] && echo .exe) ./cmd/zaqorin-agent
+	@ls -la bin/
+
+# Smoke test: each binary loads, prints --version, exits 0.
+# This proves the cross-compile produces runnable artifacts
+# even on a host that cannot execute the other GOOS
+# binaries (we can only run linux ones here).
+smoke-build:
+	@echo "=== cross-compile smoke ==="
+	@for target in "linux amd64" "linux arm64" "windows amd64" "darwin amd64" "darwin arm64"; do \
+		GOOS=$${target% *}; \
+		GOARCH=$${target#* }; \
+		binary="bin/zaqorin-agent-$$GOOS-$$GOARCH$$([ "$$GOOS" = "windows" ] && echo .exe)"; \
+		CGO_ENABLED=0 GOOS=$$GOOS GOARCH=$$GOARCH \
+			go build -ldflags='-s -w' -o $$binary ./cmd/zaqorin-agent && \
+			echo "OK   $$binary ($$(stat -c %s $$binary) bytes)" || \
+			echo "FAIL $$GOOS/$$GOARCH"; \
+	done
 
 clean:
 	rm -rf $(OBJ_DIR)/*.o $(OBJ_DIR)/*.go

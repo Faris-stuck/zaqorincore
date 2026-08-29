@@ -1,0 +1,62 @@
+<!--
+  WinSW service wrapper for the ZaqorinCore agent on Windows.
+
+  WinSW (Windows Service Wrapper) is a small executable that
+  wraps any binary as a Windows service. We embed the
+  configuration in this XML file next to zaqorin-agent.exe
+  and zaqorin-agent-service.exe (the WinSW binary renamed).
+
+  Install:
+    1. Place all three files in C:\Program Files\ZaqorinCore\:
+         zaqorin-agent.exe             (our agent)
+         zaqorin-agent-service.exe     (WinSW)
+         zaqorin-agent-service.xml     (this file)
+    2. Create C:\ProgramData\ZaqorinCore\ and drop agent.toml.
+    3. From an elevated cmd:
+         cd "C:\Program Files\ZaqorinCore"
+         zaqorin-agent-service.exe install
+         zaqorin-agent-service.exe start
+    4. Confirm:
+         sc query ZaqorinCoreAgent
+
+  Uninstall:
+    1. zaqorin-agent-service.exe stop
+    2. zaqorin-agent-service.exe uninstall
+
+  Notes:
+    - WinSW writes its log to zaqorin-agent-service.out.log
+      next to the XML. The agent's own logs go to the
+      LogDirectory configured in agent.toml (default
+      C:\ProgramData\ZaqorinCore\logs\).
+    - WorkingDirectory is set so the agent can find any
+      relative paths in agent.toml.
+    - StopExecutable is the same as the executable, but
+      with --stop. The agent handles SIGINT and exits
+      cleanly within 15s (matches the systemd TimeoutStopSec).
+-->
+<service>
+  <id>ZaqorinCoreAgent</id>
+  <name>ZaqorinCore Agent</name>
+  <description>ZaqorinCore security agent (file tail + Windows Event Log + auto-response).</description>
+  <executable>zaqorin-agent.exe</executable>
+  <arguments>--config "C:\ProgramData\ZaqorinCore\agent.toml"</arguments>
+  <stopexecutable>zaqorin-agent.exe</stopexecutable>
+  <stoparguments>--stop</stoparguments>
+  <workingdirectory>C:\Program Files\ZaqorinCore</workingdirectory>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+  <onfailure action="restart" delay="5 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <serviceaccount>
+    <username>LocalSystem</username>
+    <allowservicelogon>true</allowservicelogon>
+  </serviceaccount>
+  <priority>normal</priority>
+  <stoptimeout>15sec</stoptimeout>
+  <waithint>5000</waithint>
+  <sleeptime>1000</sleeptime>
+</service>

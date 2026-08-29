@@ -23,8 +23,10 @@ the runtime code lands in the next three feature releases.
   Security Framework. Same wire contract, same HMAC-signed
   auto-response. 5x build matrix (linux/amd64, linux/arm64,
   windows/amd64, darwin/amd64, darwin/arm64) already
-  compiles in v1.0.0. **Target: v1.2.0.** (Slice 1 scaffolding
-  ships; runtime deferred.)
+  compiles in v1.0.0. **Target: v1.2.0.** ✅ **Shipped.**
+  (macOS ESF deferred per Faris' "Yasudah windows dan
+  Linux saja" decision; dispatcher returns `Scaffold`
+  sentinel on darwin and the build still compiles.)
 - **SOAR webhook delivery** ([ADR-008](docs/decisions/ADR-008-soar-webhook-delivery.md))
   — six backends ship (generic webhook, Slack, Discord,
   PagerDuty, TheHive, Jira) with dead-letter + replay.
@@ -120,6 +122,138 @@ the runtime code lands in the next three feature releases.
 - Cybersec review full output: see the Cybersec review
   section in the project's Obsidian vault note
   `Proyek - Cyber Sentinel ZaqorinCore.md`.
+
+## [1.2.0] - 2026-08-29
+
+The Windows agent ships in this release
+([ADR-007](docs/decisions/ADR-007-multi-platform-agents.md)).
+The same ZaqorinCore server, transport, HMAC-signed
+COMMAND protocol, detector pipeline, and 51-rule Sigma
+engine now run on a mixed Linux+Windows fleet. macOS
+ESF is explicitly deferred per Faris' "Yasudah windows
+dan Linux saja tidak usah mac" decision; the dispatcher
+returns a `Scaffold` sentinel on darwin and the build
+still compiles.
+
+### Added
+
+- **Windows Event Log backend** (`agent/internal/telemetry/windows/`):
+  - `eventlog_windows.go` (213 LOC) — Win32 subscription
+    loop via `syscall.NewLazyDLL("wevtapi.dll")` +
+    `EvtSubscribe` + `EvtRender` + `EvtClose`. XPATH
+    filter selects the 6 ADR-007 event IDs (4624, 4625,
+    4688, 4698, 4720, 4732) from the Security log with
+    `EvtSubscribeToFutureEvents` (no replay of pre-
+    subscription history).
+  - `eventlog_common.go` (192 LOC) — cross-platform
+    XML decoder + metadata mapping; safe to import from
+    tests on any GOOS. Translates the Win32 Event Log
+    XML to a flat JSON object the detector pipeline
+    already understands.
+  - `eventlog_other.go` (49 LOC) — `//go:build !windows`
+    stub so the linux/darwin build matrix compiles
+    cleanly. Returns a `Scaffold` backend that logs once
+    and blocks on context cancel.
+  - `eventlog_test.go` (183 LOC) — 5 unit tests:
+    `TestBuildWireEvent4624`, `TestBuildWireEvent4688`,
+    `TestBuildWireEventUnknownID`, `TestSubscribedEventIDs`,
+    `TestIndexNul`. All pass on linux (the test host);
+    the Windows-specific test paths run on real
+    Windows hosts via the operator's CI.
+- **Windows action applier** (`agent/internal/response/kinds/`):
+  - `kill_windows.go` (66 LOC) — `kill_process` calls
+    `taskkill /F /PID <pid>` via `syscall.Exec` (no
+    shell quoting footgun).
+  - `windows_kinds_windows.go` (306 LOC) — three more
+    action kinds:
+    - `quarantine_file` → `icacls <path> /deny "*S-1-1-0:(R)"`
+      then `ren <path> <path>.quarantine`
+    - `block_ip` → `netsh advfirewall firewall add rule
+      name="ZaqorinBlock_<ip>" dir=in action=block
+      remoteip=<ip>` (deterministic rule name for later
+      removal)
+    - `revoke_credential` → `klist purge` + `net session
+      /delete` (clears Kerberos tickets + terminates
+      incoming RDP)
+  - All 4 Windows kinds gated by `//go:build windows`;
+    the Linux `kill_unix.go` (syscall.Kill) covers the
+    Linux side. Both branches compile cleanly in the
+    5 GOOS × 2 GOARCH build matrix.
+- **Cross-compile matrix** (`agent/Makefile`):
+  - `make smoke-build` — produces 5 binaries in
+    `bin/zaqorin-agent-{goos}-{goarch}[.exe]`, each
+    statically linked (`CGO_ENABLED=0`, `-ldflags='-s -w'`).
+    Verified sizes:
+    - `linux/amd64` 5.3 MB
+    - `linux/arm64` 5.1 MB
+    - `windows/amd64` 5.6 MB
+    - `darwin/amd64` 5.4 MB
+    - `darwin/arm64` 5.2 MB
+  - `make build-all` — same as smoke but only emits the
+    binaries (no smoke).
+  - `make build-local` — current host only, faster
+    iteration.
+- **WinSW service wrapper** (`agent/packaging/windows/`):
+  - `zaqorin-agent-service.xml` — WinSW config:
+    Automatic + DelayedAutoStart, restart on failure
+    (5s), 10 MiB log rotation × 5 files, LocalSystem
+    service account, 15s stop timeout.
+  - `install.cmd` — drops the agent binary, WinSW
+    wrapper, and XML into `C:\Program Files\ZaqorinCore\`,
+    creates `C:\ProgramData\ZaqorinCore\{logs,state}\`,
+    installs and starts the service.
+  - `uninstall.cmd` — stops and uninstalls the service,
+    removes the install directory, optionally removes
+    the data directory (prompts first).
+  - `README.md` — short operator walkthrough (WinSW
+    download, install flow, verify, uninstall).
+- **Operator guide** (`docs/PHASE12-windows.md`,
+  ~470 lines):
+  - What the Windows agent adds (6 event IDs, 4 action
+    kinds, same wire Event shape)
+  - What v1.2.0 does NOT include (deferred: macOS ESF,
+    ETW push, code-signing, MSI)
+  - Host requirements (Win Server 2019+ / Win 10 1809+,
+    Local Administrator, outbound 8443)
+  - Build walkthrough (`make smoke-build`)
+  - Install + verify + uninstall flow
+  - Configuration reference (same TOML, no Windows-
+    specific sections)
+  - Wire shape + detector integration notes
+  - Per-action applier reference (`taskkill`, `icacls`,
+    `netsh`, `klist`)
+  - 6-step troubleshooting checklist (service not
+    starting, SmartScreen quarantine, netsh elevation,
+    PowerShell encoded command rule not firing, etc.)
+
+### Notes
+
+- 235/235 server tests pass (no regression).
+- 14/14 Go agent packages pass (was 12, +2: Windows
+  eventlog + Windows kinds).
+- 9/9 launch smoke + 9/9 live smoke unchanged.
+- All 5 GOOS × 2 GOARCH targets build cleanly:
+  `linux/amd64`, `linux/arm64`, `windows/amd64`,
+  `darwin/amd64`, `darwin/arm64`.
+- **Honest gap:** the Windows runtime path
+  (`wevtapi.dll` syscalls + `taskkill`/`netsh` action
+  applier) was not end-to-end verified on a real
+  Windows host during the v1.2.0 build (this release
+  was produced on a Linux VPS with no Windows runner).
+  Operators must:
+  1. Run `make smoke-build` on a Windows host (or trust
+     the cross-compile from a Linux host with
+     `CGO_ENABLED=0`).
+  2. Follow `agent/packaging/windows/README.md` to
+     install the service on a real Windows host.
+  3. Confirm via `sc query ZaqorinCoreAgent` +
+     `wevtutil qe Security /c:5 /f:text` that events
+     are flowing.
+  The unit tests in `eventlog_test.go` cover the
+  decoder logic on Linux; the Win32 syscall paths
+  (`eventlog_windows.go`) and the action applier
+  (`kill_windows.go`, `windows_kinds_windows.go`) are
+  exercised only on real Windows.
 
 ## [1.1.0] - 2026-08-29
 
@@ -477,6 +611,7 @@ feature in the README is implemented, tested, and documented.
 
 [Unreleased]: https://github.com/Faris-stuck/zaqorincore/compare/v1.3.0...HEAD
 [1.3.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...v1.3.0
+[1.2.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Faris-stuck/zaqorincore/compare/v0.8.0...v0.9.0
