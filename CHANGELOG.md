@@ -819,6 +819,55 @@ revision must match it. See PHASE22 §9.
 
 [1.7.1]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.0...v1.7.1
 
+## [1.7.2] - 2026-08-29
+
+Adaptive temporal tolerance (TUGAS 3).
+
+### What ships in v1.7.2
+
+- **`pkg/timing/`** — per-subject RTT
+  sliding window (32 samples), adaptive
+  budget `tau_upper = mu + 3*sigma`,
+  conservative floor (250 ms), CV-based
+  fallback. 11 tests including 2 zero-alloc
+  NFR gates.
+- **`pkg/engine.TimedProcess`** — timing-
+  aware wrapper around `Engine.Process`.
+  Absorbs in-budget events (no transition),
+  promotes over-budget events to
+  `EventRateLimitTrip` (L0 -> L1), falls
+  back to pass-through when the timing
+  table is full or the subject is unknown.
+- **`ATS` (Anomaly Trust Score)** — 0..100
+  fraction of samples that exceed the
+  current budget. Exposed for SOAR/automation
+  to escalate a subject directly to L2.
+
+### NFR
+
+- `Table.Record`: 0 B/op, 0 allocs/op
+- `Table.BudgetFor`: 0 B/op, 0 allocs/op
+- Engine Process: 36 ns/op, 0 allocs/op
+  (15M transitions/sec, 60× under the 1µs
+  budget)
+
+### Graceful fallback
+
+Unknown subject, full table, insufficient
+samples, or high CV all return the
+conservative 250 ms default. **A legitimate
+user with a fresh connection or a flaky
+network is never blocked.**
+
+### Files
+
+- `agent/pkg/timing/timing.go` (242 LOC)
+- `agent/pkg/timing/timing_test.go` (212 LOC)
+- `agent/pkg/engine/timed.go` (140 LOC)
+- `agent/pkg/engine/timed_test.go` (137 LOC)
+
+[1.7.2]: https://github.com/Faris-stuck/zaqorincore/compare/v1.7.1...v1.7.2
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release
