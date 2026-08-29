@@ -382,6 +382,84 @@ itself, only for the test fixture.
 
 [1.4.z]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.y...v1.4.z
 
+## [1.5.0] - 2026-08-29
+
+5 new Windows Sigma rules, enabled by the v1.4.y
+compound conditions and v1.4.z `required_fields`
+primitives.
+
+### New rules
+
+| Rule ID | Event ID | ATT&CK | Level |
+|---|---|---|---|
+| `builtin-windows-4688-cmd-from-office` | 4688 | T1059.003 / T1566.001 | high |
+| `builtin-windows-5861-wmi-subscription` | 5861 | T1546.012 | high |
+| `builtin-windows-4663-startup-folder` | 4663 | T1547.001 | high |
+| `builtin-windows-4698-scheduled-task` | 4698 | T1053.005 | medium |
+| `builtin-windows-4624-rdp-unusual-source` | 4624 | T1078 / T1021.001 | high |
+
+### T1059.003 cmd.exe from Office (off-hours)
+
+cmd.exe spawned by winword.exe, excel.exe,
+outlook.exe, or powerpnt.exe during off-hours
+(outside 09:00-17:00). Strong indicator of
+macro-based document attacks. Uses
+`required_fields: [parent_process_name,
+metadata.hour]` to fail-CLOSED for agents
+that can't send those.
+
+### T1546.012 WMI event subscription
+
+Detects `Operation = Created` on Event ID 5861
+(WMI event subscription). Common persistence
+mechanism. No off-hours filter — operators
+baseline low volume and tune `cooldown_sec`.
+
+### T1547.001 Startup folder persistence
+
+Detects WriteData access (4663) to paths
+matching `\Start Menu\Programs\Startup`
+(case-insensitive). Uses `required_fields:
+[target_path]` to fail-CLOSED for agents
+that don't send the path.
+
+### T1053.005 Scheduled task created
+
+Detects Scheduled Task creation (4698). No
+off-hours filter — legitimate IT automation
+creates tasks. Operators baseline volume.
+
+### T1078 / T1021.001 RDP from unusual source
+
+Detects interactive logon (4624 type 10) from
+a source IP NOT in the allowlist. The default
+allowlist is empty (10.0.0.1, 10.0.0.2 placeholders).
+Operators MUST configure in
+`rules.local_overrides/` before deploying.
+Uses `required_fields: [source_ip]`.
+
+### Engine limitations encountered (documented)
+
+- T1078 simplified to ONE `not` filter
+  (allowlist); original spec had TWO
+  (`not allowlist and not business_hours`).
+  v1.4.y supports only one. Operators add
+  off-hours via local_overrides.
+- T1547 uses `re:` prefix in VALUE (not
+  in key name). Engine doesn't parse
+  `field|modifier:` in key.
+
+### Test count
+
+```
+315 server pytest PASS
+```
+
+(was 303 in v1.4.z → 315 in v1.5.0, +12 new
+rule tests, 0 regressions)
+
+[1.5.0]: https://github.com/Faris-stuck/zaqorincore/compare/v1.4.z...v1.5.0
+
 ## [1.2.0] - 2026-08-29
 
 The Windows agent ships in this release

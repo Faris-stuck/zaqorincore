@@ -1,0 +1,37 @@
+title: Windows WMI event subscription created (persistence)
+id: builtin-windows-5861-wmi-subscription
+description: |
+  Detects creation of a WMI event subscription
+  (Event ID 5861) which is a common persistence
+  mechanism (ATT&CK T1546.012). WMI subscriptions
+  can run arbitrary code on a schedule or in
+  response to system events, and they survive
+  reboot. Legitimate sysadmin tools create them
+  too, but the volume is low and easy to baseline.
+
+  Mapping:
+    ATT&CK T1546.012 (Event Triggered Execution:
+      WMI Event Subscription)
+    PCI DSS 8.2.1 (Privileged access controls)
+    ISO 27001 A.5.7 (Threat intelligence)
+tags:
+  - attack.t1546.012
+  - attack.persistence
+  - attack.privilege_escalation
+  - compliance.pci_dss.req8
+  - compliance.iso27001.A5.7
+references:
+  - https://attack.mitre.org/techniques/T1546/012/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-5861
+level: high
+detection:
+  selection:
+    source: "windows.security.5861"
+    operation: "Created"
+  condition: selection
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 1800
+dedup_key: "{{subscription_name}}"

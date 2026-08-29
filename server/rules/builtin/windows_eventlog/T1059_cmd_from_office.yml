@@ -1,0 +1,65 @@
+title: Windows cmd.exe spawned by Office application
+id: builtin-windows-4688-cmd-from-office
+description: |
+  Detects a cmd.exe process (Event ID 4688) launched by a
+  Microsoft Office application (Word, Excel, PowerPoint,
+  Outlook). This pattern is rare in legitimate workflows
+  and strongly associated with macro-based document
+  attacks (ATT&CK T1059.003) — the document opens, the
+  macro spawns cmd, the cmd spawns PowerShell or
+  downloads a payload.
+
+  Narrowed to off-hours (outside 09:00-17:00) to reduce
+  false positives from rare legitimate admin scripts
+  that spawn cmd from Office macros during business
+  hours.
+
+  False positives: rare. Some IT/admin scripts use
+  `cmd /c` from a macro for legitimate automation, but
+  this is uncommon and easy to whitelist by user/host.
+
+  Mapping:
+    ATT&CK T1059.003 (Windows Command Shell)
+    ATT&CK T1566.001 (Spearphishing Attachment)
+    PCI DSS 11.5.1 (Intrusion detection)
+    ISO 27001 A.8.7 (Protection against malware)
+tags:
+  - attack.t1059.003
+  - attack.t1566.001
+  - attack.execution
+  - compliance.pci_dss.req11
+  - compliance.iso27001.A8.7
+references:
+  - https://attack.mitre.org/techniques/T1059/003/
+  - https://attack.mitre.org/techniques/T1566/001/
+level: high
+required_fields:
+  - parent_process_name
+  - metadata.hour
+detection:
+  selection:
+    source: "windows.security.4688"
+    process_name: "cmd.exe"
+    parent_process_name:
+      - "winword.exe"
+      - "excel.exe"
+      - "outlook.exe"
+      - "powerpnt.exe"
+  filter_business_hours:
+    metadata.hour:
+      - "9"
+      - "10"
+      - "11"
+      - "12"
+      - "13"
+      - "14"
+      - "15"
+      - "16"
+      - "17"
+  condition: selection and not filter_business_hours
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 3600
+dedup_key: "{{process_name}}:{{parent_process_name}}"

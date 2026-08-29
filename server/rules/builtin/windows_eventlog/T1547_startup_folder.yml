@@ -1,0 +1,45 @@
+title: Windows Startup folder file modification (persistence)
+id: builtin-windows-4663-startup-folder
+description: |
+  Detects file modifications (Event ID 4663) to a
+  known Windows Startup folder. This is a classic
+  persistence mechanism (ATT&CK T1547.001) where
+  an attacker places a script, shortcut, or
+  executable in the Startup directory so it runs
+  on next user logon.
+
+  Both per-user (Startup) and system-wide
+  (Start Menu\Programs\Startup) folders are
+  monitored. Operators can extend the list of
+  paths via rules.local_overrides/.
+
+  Mapping:
+    ATT&CK T1547.001 (Boot or Logon Autostart
+      Execution: Registry Run Keys / Startup
+      Folder)
+    PCI DSS 10.2.1 (Audit log review)
+    ISO 27001 A.8.5 (Secure authentication)
+tags:
+  - attack.t1547.001
+  - attack.persistence
+  - attack.privilege_escalation
+  - compliance.pci_dss.req10
+  - compliance.iso27001.A8.5
+references:
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4663
+level: high
+required_fields:
+  - target_path
+detection:
+  selection:
+    source: "windows.security.4663"
+    access_mask: "WriteData"
+    target_path: "re:(?i)\\\\Start[ _]Menu\\\\Programs\\\\Startup"
+  condition: selection
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 3600
+dedup_key: "{{target_path}}"

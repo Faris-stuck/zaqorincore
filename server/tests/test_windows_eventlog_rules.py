@@ -375,7 +375,13 @@ def test_windows_eventlog_rules_load() -> None:
     # v1.4.x additions
     assert "builtin-windows-4688-powershell-encoded" in ids
     assert "builtin-windows-4688-powershell-download" in ids
-    assert len(rules) == 7
+    # v1.5.0 additions
+    assert "builtin-windows-4688-cmd-from-office" in ids
+    assert "builtin-windows-5861-wmi-subscription" in ids
+    assert "builtin-windows-4663-startup-folder" in ids
+    assert "builtin-windows-4698-scheduled-task" in ids
+    assert "builtin-windows-4624-rdp-unusual-source" in ids
+    assert len(rules) == 12
     for r in rules:
         assert r.title
         assert r.level in ("low", "medium", "high", "critical")

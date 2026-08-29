@@ -1,0 +1,56 @@
+title: Windows interactive logon from unexpected source
+id: builtin-windows-4624-rdp-unusual-source
+description: |
+  Detects an interactive logon (Event ID 4624
+  with logon_type=10 RemoteInteractive, i.e. RDP)
+  from a source IP that is NOT in the allowlist.
+
+  Legitimate RDP sessions come from a small set
+  of jump hosts, VPN endpoints, or admin
+  workstations. Logons from anywhere else are
+  suspicious and may indicate an attacker using
+  stolen credentials (ATT&CK T1078) to log in
+  from their own infrastructure.
+
+  Operators MUST configure the IP allowlist in
+  `rules.local_overrides/` before deploying.
+  The default empty list disables the rule
+  (no IP can satisfy an empty allowlist), which
+  is the safe fail-closed behavior.
+
+  Mapping:
+    ATT&CK T1078 (Valid Accounts)
+    ATT&CK T1021.001 (Remote Services: RDP)
+    PCI DSS 8.3.1 (Strong authentication for
+      remote access)
+    ISO 27001 A.8.21 (Security of network
+      services)
+tags:
+  - attack.t1078
+  - attack.t1021.001
+  - attack.initial_access
+  - attack.lateral_movement
+  - compliance.pci_dss.req8
+  - compliance.iso27001.A8.21
+references:
+  - https://attack.mitre.org/techniques/T1078/
+  - https://attack.mitre.org/techniques/T1021/001/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4624
+level: high
+required_fields:
+  - source_ip
+detection:
+  selection:
+    source: "windows.security.4624"
+    logon_type: "10"
+  filter_allowlist:
+    source_ip:
+      - "10.0.0.1"
+      - "10.0.0.2"
+  condition: selection and not filter_allowlist
+action:
+  kind: snapshot_processes
+  target: "{{pid}}"
+  ttl_sec: 0
+cooldown_sec: 1800
+dedup_key: "{{subject_user}}:{{source_ip}}"
