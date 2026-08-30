@@ -38,6 +38,7 @@ from .api.v1 import (
     ingest_webhook,
     security as security_api,
     soar as soar_api,
+    stats as stats_api,
     stream,
     version as version_api,
 )
@@ -169,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(healthcheck_api.router)
     app.include_router(agents_api.router)
     app.include_router(security_api.router)
+    app.include_router(stats_api.router)
     app.include_router(version_api.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo

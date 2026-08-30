@@ -18,6 +18,7 @@ from . import (
     ingest_cloudflare,
     ingest_webhook,
     security,
+    stats,
     stream,
     version,
 )
@@ -37,5 +38,6 @@ __all__ = [
     "healthcheck",
     "agents",
     "security",
+    "stats",
     "version",
 ]

@@ -112,6 +112,7 @@ _EXCLUDED_PREFIXES: tuple[str, ...] = (
     "/api/v1/ingest/cloudflare",
     "/api/v1/ingest/webhook",
     "/api/v1/security",
+    "/api/v1/stats",
     "/static",
 )
 
