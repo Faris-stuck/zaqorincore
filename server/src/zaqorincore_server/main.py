@@ -45,6 +45,7 @@ from .logging import configure_logging, get_logger
 from .rate_limit import RateLimitMiddleware
 from .request_id import RequestIDMiddleware
 from .security import SecurityHeadersMiddleware
+from .error_envelope import ErrorEnvelopeMiddleware
 from .soar.worker import SoarWorker
 from .streams.publisher import close_redis, ensure_consumer_group, get_redis
 
@@ -137,6 +138,13 @@ def create_app() -> FastAPI:
     # ``request_id`` structlog contextvar for the lifetime of
     # this request. See ops/cycle-26.
     app.add_middleware(RequestIDMiddleware)
+    # Error envelope (opt-in via ZAQORIN_ERROR_ENVELOPE=1,
+    # default OFF so the cycle-14 contracts on 401-empty-body and
+    # ``r.json()["detail"]`` keep holding). When ON, every
+    # non-excluded 4xx/5xx response is wrapped in
+    # ``{error: {code, message, request_id}, detail}``.
+    # See security/cycle-28.
+    app.add_middleware(ErrorEnvelopeMiddleware)
 
     # Health (no /api prefix)
     app.include_router(health.router)
