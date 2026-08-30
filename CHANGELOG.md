@@ -212,6 +212,69 @@ matters.
   covered; background tasks and the agent forwarder need
   a separate pass if/when they log inside the request scope.
 
+## [2.8.0] - 2026-08-30 — Q4 Detection Pack v3 (4 Sigma rules)
+
+Continues the Q4 detection coverage work. v2.7.0 shipped
+12/200 rules; v2.8.0 adds 4 more for **16/200 ATT&CK
+technique coverage (8.0%)**. No engine changes, no new
+dependencies. All rules continue the anchoring discipline
+(`\b` word boundaries + `^...$` line anchors + explicit
+substring-trap tests) proven in v2.7.0.
+
+### Added
+
+- **Q4 Detection Pack v3** — 4 production Sigma rules under
+  `server/rules/builtin/mitre_attack/`, each with its own
+  test file:
+
+  | Cycle | Rule | ATT&CK | Description |
+  |---|---|---|---|
+  | 41 | `T1087_account_discovery.yml` | T1087 | Account Discovery (id, whoami, getent passwd, net user) |
+  | 42 | `T1098_account_manipulation.yml` | T1098 | Account Manipulation (usermod -aG, groupadd, net localgroup) |
+  | 43 | `T1485_data_destruction.yml` | T1485 | Data Destruction (rm -rf /, dd of=/dev/sd, mkfs on data mounts) |
+  | 44 | `T1036_masquerading.yml` | T1036 | Masquerading (cp /bin/sh to .jpg, mime-type spoofing, chmod +x hidden) |
+
+  ~5 small cycles (41–44), 8-cycle detection streak
+  (35–42). Engine support continues to cover the
+  `selection and not X` compound pattern (single negation
+  clause) from v2.4.0; multi-clause filter chains are
+  consolidated into one OR chain in each rule's
+  `filter_legit_*` field. See
+  [docs/PHASE15](docs/PHASE15-sigma-compound-conditions.md).
+
+### Notes
+
+- **Engine scope:** zero changes under
+  `server/src/zaqorincore_server/rule_engine/`. All four
+  rules use only the engine primitives that already
+  shipped in v2.4.0 (single `and not` clause + anchored
+  field regex).
+- **Anchoring discipline:** every detection field uses
+  `\b` word boundaries or `^...$` line anchors. Substring-
+  trap tests cover at least one false-positive field per
+  rule (e.g. a `whoami` call without discovery intent;
+  a `chmod +x` on a script that isn't masquerading).
+- **Lint gate:** the `scripts/lint_sigma_rules.sh`
+  compile gate from cycle 27 + the GitHub Actions
+  workflow from cycle 32 both stay green across all
+  four new rules. Builtin rule count grows from 88 to
+  92; each new rule has its own file, so 88 → 93 files
+  under `server/rules/builtin/`.
+- **Recovery note (cycle 44):** the T1036 subagent hit
+  the 600s wall-time cap while iterating on a regex that
+  had `(?i)` placed mid-pattern (Python `re` requires
+  global flags at the start of the expression). Files
+  were complete on disk; the orchestrator fixed the
+  pattern in two patches and shipped in the same cycle.
+  Recorded as a cycle-44 lesson — one anchor pattern,
+  one test, ship. If regex iteration exceeds 3 patches,
+  commit best-effort and exit.
+- **Honest gap:** `T1569.001` (launchctl) remains blocked
+  on the engine condition-parser bug noted in v2.7.0;
+  deferred to the next detection cycle. `T1569.002`
+  (system services execution on Windows) is also
+  deferred until the same engine fix lands.
+
 ## [2.7.0] - 2026-08-30 — Q4 Detection Pack v2 (5 Sigma rules)
 
 Continues the detection coverage work started in the Q3
