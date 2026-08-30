@@ -1,0 +1,36 @@
+title: Event-triggered execution via trap, inotifywait, or systemd path unit
+id: c4a5e2b7-1d6f-4a3e-9c2b-7e8f5d1a0b3c
+description: |
+  Detects Linux processes that install an event-triggered execution
+  handler: a shell `trap` command that arms a custom signal handler,
+  `inotifywait` / `inotifywatch` watching sensitive paths, or a
+  systemd path unit creation. Adversaries use these mechanisms for
+  persistence and for trigger-based payload delivery (MITRE
+  T1546.005 — Trap, T1546.005 — Event Triggered Execution). Shell
+  trap calls inside interactive package-manager scripts are excluded
+  to suppress false positives.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1546/
+  - https://attack.mitre.org/techniques/T1546/005/
+tags:
+  - attack.t1546
+  - attack.t1546.005
+  - attack.persistence
+  - attack.privilege_escalation
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(bash|sh|dash|zsh|ksh|inotifywait|inotifywatch|systemd-path|systemd)\b'
+    command: 're:(?i)(\btrap\s+[\x27\x22]?[A-Za-z0-9_.\-/]+|inotifywait\b|inotifywatch\b|systemd[\-_]path\b|\.path\s*=|path\s*=\s*[\x27\x22]?/etc)'
+  filter_pkg_manager:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman|snap|flatpak|brew)\b'
+  condition: selection and not filter_pkg_manager
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
