@@ -59,6 +59,27 @@ jobs:
           name: coverage-unit
           path: agent/coverage.out
 
+  lint_sigma_rules:
+    # Cheap compile gate for every Sigma rule YAML in
+    # server/rules/. Defence-in-depth on top of cycle 27's
+    # pre-commit lint script: any push or PR that breaks a
+    # rule file fails here before the server ever starts.
+    name: lint_sigma_rules (compile gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Lint Sigma rule YAMLs
+        # The script self-bootstraps PYTHONPATH against
+        # server/src and exits non-zero on the first file
+        # that fails to parse. No third-party tools.
+        run: bash server/scripts/lint_sigma_rules.sh
+
   bench:
     name: bench (NFR regression gate)
     runs-on: ubuntu-latest
