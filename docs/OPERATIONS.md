@@ -8,7 +8,8 @@ this page is the *how*, end to end, in copy-pasteable order.
 If you only have five minutes, run sections 1, 2 and 5. If you have
 twenty, add sections 3, 4 and 6. Section 7 is the reference card for
 the v2.1.x operator surface (role-based auth, `--version`, the two new
-MITRE ATT&CK rules).
+MITRE ATT&CK rules). Section 8 covers the v2.2.0 Q3 Detection Pack
+(five new Sigma rules) and the per-dependency health probe.
 
 ## 1. What you are deploying
 
@@ -197,3 +198,81 @@ Where things live:
 
 When in doubt, the phase doc that covers the area you are touching is
 the authoritative design reference; this runbook is the procedure.
+
+## 8. v2.2.0 — Q3 Detection Pack + per-dep health probe
+
+v2.2.0 ships **five new Sigma rules** for the MITRE ATT&CK techniques
+operators asked for the most after v2.1.x. All five are in
+`server/rules/builtin/mitre_attack/` and ship enabled by default.
+
+| Rule file | MITRE | What it catches |
+|---|---|---|
+| `T1059_unix_shell_exec.yml` | T1059.004 | `bash -c "..."`, `sh -c '...'`, `dash`, `zsh`, `ksh` one-liners — classic exploit-chain / web shell pattern. |
+| `T1053_cron_persistence.yml` | T1053.003 | Writes to `/etc/crontab`, `/etc/cron.*`, `/var/spool/cron/*`; `crontab -` invocations from a non-daemon parent. |
+| `T1070_file_deletion.yml` | T1070.004 | `rm -rf`, `shred`, `wipe`, `srm`, `find … -delete` targeting sensitive paths (`/var/log`, `/etc`, `/root`, history files, journald). |
+| `T1548_setuid_setgid_abuse.yml` | T1548.001 | `chmod u+s`, `chmod g+s`, `install -m … -o root`, `cp/mv /bin/… && chmod 4…` — SUID/SGID persistence. |
+| `T1053_at_scheduled_task.yml` | T1053.005 | `at`, `atq`, `atrm`, `batch`, and direct writes to `/var/spool/at*` — one-shot scheduled execution. |
+
+Trigger each one on the agent host to confirm the loop end-to-end:
+
+```bash
+# T1059.004 — unix shell one-liner
+ssh user@agent-host 'bash -c "id; uname -a"'
+
+# T1053.003 — cron persistence
+ssh user@agent-host 'echo "* * * * * /tmp/x.sh" | crontab -'
+
+# T1070.004 — destructive file deletion
+ssh user@agent-host 'shred -vfzu /var/log/auth.log.1'
+
+# T1548.001 — SUID abuse
+ssh user@agent-host 'cp /bin/bash /tmp/rootbash && chmod u+s /tmp/rootbash'
+
+# T1053.005 — at-scheduled task
+ssh user@agent-host 'echo "id > /tmp/p.txt" | at 02:00'
+```
+
+Each one fires within two seconds; the alert lands tagged
+`attack.tNNNN`, level `high`, dedup key `<user>:<source_ip>`. If the
+`/healthz/deps` probe below is green but the rule never fires, the
+agent is not sending the event shape the rule expects — see
+`docs/PHASE13-soar.md` for the event-shape checklist.
+
+### 8.1 Per-dependency health probe
+
+v2.1.6 added `/healthz/deps` alongside the existing `/healthz` and
+`/readyz`. It returns one row per dependency (Postgres pool, Redis
+pool, migration head, alert backlog) with structured status for ops
+dashboards and on-call scripts:
+
+```bash
+curl -fsS http://<server>:8000/healthz/deps | jq
+```
+
+Example healthy response:
+
+```json
+{
+  "status": "ok",
+  "deps": [
+    {"name": "postgres", "status": "ok", "latency_ms": 3, "pool_size": 5},
+    {"name": "redis",    "status": "ok", "latency_ms": 1, "pool_size": 10},
+    {"name": "migrations", "status": "ok", "head": "head_2026_08_30"},
+    {"name": "alerts",   "status": "ok", "backlog": 0}
+  ]
+}
+```
+
+Use it as a Prometheus blackbox target, an Alertmanager receiver, or
+just a curl loop from cron:
+
+```bash
+# /etc/cron.d/zaqorin-health (every minute)
+* * * * * www-data curl -fsS http://127.0.0.1:8000/healthz/deps \
+  | jq -e '.status == "ok"' >/dev/null \
+  || echo "zaqorin deps degraded: $(date)" | mail -s "zaqorin degraded" ops@example.com
+```
+
+`status: "degraded"` fires when any single dep is slow, down, or
+backlogged; treat it as a page-able signal in the same rotation as
+`/healthz` 5xx.
