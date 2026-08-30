@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ZaqorinCore Server",
-        version="2.1.0",
+        version="2.7.0",
         description=(
             "Central server for ZaqorinCore. Accepts WebSocket streams "
             "from zaqorin-agent, persists events to PostgreSQL, runs "
