@@ -4,6 +4,24 @@ Each sub-module is a FastAPI APIRouter. The package is also re-
 exported so main.py can `from .api import v1` and mount them all.
 """
 
-from . import alerts, canary, evidence, events, hosts, hunt, stream
+from . import (
+    alerts,
+    canary,
+    evidence,
+    events,
+    hosts,
+    hunt,
+    ingest_cloudflare,
+    stream,
+)
 
-__all__ = ["stream", "hosts", "events", "alerts", "hunt", "canary", "evidence"]
+__all__ = [
+    "stream",
+    "hosts",
+    "events",
+    "alerts",
+    "hunt",
+    "canary",
+    "evidence",
+    "ingest_cloudflare",
+]

@@ -1,0 +1,37 @@
+title: CDN login brute force (11+ failed auths in 5m at edge)
+id: c3fd9220-0c1b-4128-9bb5-37f1865ddea2
+description: |
+  Detects a burst of HTTP 401/403 responses from a single source
+  IP against common login or admin endpoints within 5 minutes
+  observed at the CDN edge. Typical signature of credential
+  stuffing or login brute force against a web app fronted by a
+  CDN. Differs from the SSH/RDP/FTP brute-force detector in that
+  the source is the edge log (cloudflare_logpush or nginx_access)
+  rather than a host log, and the signal is response status code
+  rather than authentication service status.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1110/  # Brute Force
+  - https://attack.mitre.org/techniques/T1110.003/  # Password Spraying
+  - https://attack.mitre.org/techniques/T1110.004/  # Credential Stuffing
+tags:
+  - attack.t1110
+  - attack.credential_access
+  - cdn.edge
+level: high
+detection:
+  selection:
+    source: "cloudflare_logpush"
+    uri: 're:(?i)/(login|admin|wp-login|api/auth)'
+    status: 're:^(401|403)$'
+  condition: selection
+  timeframe: 5m
+  count: 11
+action:
+  kind: block_ip
+  target: "{{src_ip}}"
+  ttl_sec: 3600
+cooldown_sec: 600
+dedup_key: "{{src_ip}}"

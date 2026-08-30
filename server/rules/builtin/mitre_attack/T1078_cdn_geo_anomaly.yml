@@ -1,0 +1,36 @@
+title: CDN geographic anomaly on admin endpoint
+id: f51d559a-6704-4af4-baab-ba74aa62f26e
+description: |
+  Flags access to administrative endpoints from countries that are
+  outside the typical user base and from a non-bogon ASN. The
+  country blocklist (CN, RU, KP, IR) is intentionally narrow and
+  is the known noisy baseline; tune the country list to your
+  user base; high false-positive rate without tuning. The
+  asn_authoritative check excludes traffic whose ASN is bogon or
+  reserved so the rule focuses on real-routed traffic rather than
+  spoofed-source probes.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1078/  # Valid Accounts
+  - https://pages.nist.gov/cyberframework/
+tags:
+  - attack.t1078
+  - attack.initial_access
+  - cdn.geo
+  - nist_csf.PR.AC
+level: medium
+detection:
+  selection:
+    source: "cloudflare_logpush"
+    uri: 're:(?i)/(admin|wp-admin|api/v1/admin)'
+    country:
+      - "CN"
+      - "RU"
+      - "KP"
+      - "IR"
+    asn_authoritative: "false"
+  condition: selection
+cooldown_sec: 3600
+dedup_key: "{{src_ip}}:{{uri}}"

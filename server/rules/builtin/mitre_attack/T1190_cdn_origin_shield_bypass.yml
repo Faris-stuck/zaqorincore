@@ -1,0 +1,36 @@
+title: CDN origin shield bypass (request reached origin directly)
+id: 806c337f-eba7-4496-9e79-b2aa6c6ecfa1
+description: |
+  Flags requests that bypassed the Cloudflare edge and reached the
+  origin directly, or requests where the WAF matched a rule tied to
+  the origin layer. A non-zero OriginIPHitCount means the client
+  connected without traversing the WAF; a WAF rule whose matched
+  variable includes "origin" indicates a bypass attempt against the
+  origin-shield policy. Either case is treated as attempted initial
+  access to the protected application.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1190/  # Exploit Public-Facing Application
+  - https://developers.cloudflare.com/fundamentals/reference/origin-ip-hits/
+tags:
+  - attack.t1190
+  - attack.initial_access
+  - nist_csf.PR.DS
+  - cdn.bypass
+level: high
+detection:
+  selection:
+    source: "cloudflare_logpush"
+  filter_origin_hit:
+    origin_ip_hit_count: '|ge: 1'
+  filter_waf_origin_var:
+    waf_matched_var: 'contains:origin'
+  condition: selection and (filter_origin_hit or filter_waf_origin_var)
+action:
+  kind: block_ip
+  target: "{{src_ip}}"
+  ttl_sec: 3600
+cooldown_sec: 600
+dedup_key: "{{src_ip}}"

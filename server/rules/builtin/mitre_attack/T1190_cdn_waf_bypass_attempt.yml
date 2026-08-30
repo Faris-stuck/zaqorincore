@@ -1,0 +1,33 @@
+title: CDN WAF bypass attempt (block + 2xx served)
+id: 4da13f0a-eef0-4dce-80a5-70aa745b71a7
+description: |
+  Flags a request where Cloudflare WAF issued a block, challenge,
+  or JS-challenge action yet the served response status was below
+  400 (a 2xx or 3xx). When the WAF blocks a request the served
+  response should be a 403/429/503, never a success status. A
+  success status with a WAF block indicates the WAF was bypassed
+  and the request reached the origin successfully -- a critical
+  defense-evasion indicator.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1190/  # Exploit Public-Facing Application
+  - https://developers.cloudflare.com/waf/managed-rules/
+tags:
+  - attack.t1190
+  - attack.defense_evasion
+  - cdn.waf
+  - nist_csf.DE.CM
+level: critical
+detection:
+  selection:
+    source: "cloudflare_logpush"
+    waf_action:
+      - "BLOCK"
+      - "CHALLENGE"
+      - "JS_CHALLENGE"
+    status: '|lt: 400'
+  condition: selection
+cooldown_sec: 600
+dedup_key: "{{src_ip}}"

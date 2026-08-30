@@ -23,7 +23,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import health, v1
-from .api.v1 import alerts, canary, evidence, events, hosts, hunt, soar as soar_api, stream
+from .api.v1 import (
+    alerts,
+    canary,
+    evidence,
+    events,
+    hosts,
+    hunt,
+    ingest_cloudflare,
+    soar as soar_api,
+    stream,
+)
 from .config import get_settings
 from .db import dispose_engine, get_session_factory, init_engine
 from .detectors import runner as detector_runner
@@ -122,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(canary.router)
     app.include_router(evidence.router)
     app.include_router(soar_api.router)
+    app.include_router(ingest_cloudflare.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
     # root; if the directory is missing (e.g. server-only deployment), the

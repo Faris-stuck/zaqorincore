@@ -1,0 +1,32 @@
+title: CDN bot-score anomaly with suspicious user agent
+id: cf803b60-9620-4581-ba3d-a01deaaddf92
+description: |
+  Flags requests where Cloudflare assigned a low bot score (under 30)
+  AND the user agent string contains a known headless-browser or
+  scraper framework marker. Note: the rule is intentionally set to
+  level=medium rather than high because low bot scores are common
+  for legitimate privacy-focused crawlers, privacy browsers, and
+  API clients. Operators should expect this rule to require
+  cross-checking against allowed partner IP ranges, known-good
+  automation, or correlated authentication failures before
+  treating a fire as a confirmed T1190 initial-access attempt.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1190/  # Exploit Public-Facing Application
+  - https://developers.cloudflare.com/bots/concepts/bot-score/
+tags:
+  - attack.t1190
+  - attack.initial_access
+  - cdn.bot
+  - nist_csf.DE.CM
+level: medium
+detection:
+  selection:
+    source: "cloudflare_logpush"
+    bot_score: '|lt: 30'
+    user_agent: 're:(?i)(headless|phantom|selenium|playwright|scrapy)'
+  condition: selection
+cooldown_sec: 1800
+dedup_key: "{{src_ip}}"
