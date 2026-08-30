@@ -313,6 +313,92 @@ async def test_api_path_is_rate_limited_in_real_app(engine) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 6. Structured 429 event (cycle 24 — ops/observability)
+# ---------------------------------------------------------------------------
+
+
+def test_429_emits_structlog_event_with_expected_fields() -> None:
+    """When the middleware rejects a request, it must emit a
+    structlog ``warning`` event named ``rate_limit_exceeded`` with
+    ``path``, ``bucket_kind``, ``key_hash``, ``limit_per_min``, and
+    ``retry_after_sec``. Ops dashboards and SIEM ingestion rules
+    depend on this shape staying stable.
+    """
+    import asyncio  # noqa: PLC0415
+
+    import structlog  # noqa: PLC0415
+
+    mw = RateLimitMiddleware(app=_StubApp())
+    mw._enabled = True
+    mw._limit = 1
+
+    async def _next(request):  # type: ignore[no-untyped-def]
+        return _StubResponse(200, {"status": "ok"})
+
+    # Two calls so the second hits the budget=1 limit.
+    async def _drive() -> None:
+        await mw.dispatch(_StubRequest(), _next)
+        await mw.dispatch(_StubRequest(), _next)
+
+    with structlog.testing.capture_logs() as caplogs:
+        asyncio.run(_drive())
+
+    events = [e for e in caplogs if e.get("event") == "rate_limit_exceeded"]
+    assert len(events) == 1, events
+    evt = events[0]
+    assert evt["log_level"] == "warning"
+    assert evt["path"] == "/api/v1/test"
+    assert evt["bucket_kind"] == "ip"
+    assert evt["limit_per_min"] == 1
+    assert evt["retry_after_sec"] >= 1
+    # key_hash is a 12-char hex prefix of sha256, never the raw key/IP.
+    assert isinstance(evt["key_hash"], str) and len(evt["key_hash"]) == 12
+    assert all(c in "0123456789abcdef" for c in evt["key_hash"])
+
+
+def test_429_log_does_not_leak_api_key() -> None:
+    """The log payload must contain only the sha256-prefix hash of
+    the bucket secret, never the raw ``X-API-Key`` value or the raw
+    client IP. Pinned in cycle 24 so a future refactor cannot start
+    shipping credentials to stderr.
+    """
+    import asyncio  # noqa: PLC0415
+
+    import structlog  # noqa: PLC0415
+
+    # Use a deliberately distinctive API key we can grep for.
+    leaked_secret = "cycle24-leaked-key-do-not-log-me"
+
+    class _ApiKeyRequest(_StubRequest):
+        headers = {"x-api-key": leaked_secret}
+
+    mw = RateLimitMiddleware(app=_StubApp())
+    mw._enabled = True
+    mw._limit = 1
+
+    async def _next(request):  # type: ignore[no-untyped-def]
+        return _StubResponse(200, {"status": "ok"})
+
+    async def _drive() -> None:
+        await mw.dispatch(_ApiKeyRequest(), _next)
+        await mw.dispatch(_ApiKeyRequest(), _next)
+
+    with structlog.testing.capture_logs() as caplogs:
+        asyncio.run(_drive())
+
+    events = [e for e in caplogs if e.get("event") == "rate_limit_exceeded"]
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["bucket_kind"] == "key"
+    assert evt["key_hash"] != leaked_secret
+    # Defensive: search every captured log line for the raw secret.
+    raw_dump = repr(caplogs)
+    assert leaked_secret not in raw_dump, (
+        f"raw API key leaked into log payload: {raw_dump}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Test scaffolding
 # ---------------------------------------------------------------------------
 

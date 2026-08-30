@@ -49,7 +49,7 @@ Cleanup:
 
 from __future__ import annotations
 
-import logging
+import hashlib
 import time
 from collections import deque
 from threading import Lock
@@ -61,8 +61,12 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from .config import get_settings
+from .logging import get_logger
 
-log = logging.getLogger(__name__)
+# Use structlog so 429 events emit as JSON lines on stderr (the rest
+# of the codebase already routes through structlog; stdlib ``logging``
+# would bypass it and write plain text). See ops/cycle-24.
+log = get_logger(__name__)
 
 # Header the agent already uses; do not invent a new contract.
 _API_KEY_HEADER = "x-api-key"
@@ -209,14 +213,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # seconds. Round up so the client doesn't hammer us before
             # the window actually slides.
             retry_seconds = max(1, int(retry_after + 0.999))
+            # Split the bucket key into kind + secret. The secret
+            # (full API key or raw IP) is hashed with a short prefix
+            # so log consumers can correlate calls without leaking
+            # credentials or storing PII verbatim.
+            kind, _, secret = key.partition(":")
+            key_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
             log.warning(
-                "rate limit exceeded",
-                extra={
-                    "bucket_key_prefix": key.split(":", 1)[0],
-                    "path": path,
-                    "limit_per_min": self._limit,
-                    "retry_after_sec": retry_seconds,
-                },
+                "rate_limit_exceeded",
+                path=path,
+                bucket_kind=kind,
+                key_hash=key_hash,
+                limit_per_min=self._limit,
+                retry_after_sec=retry_seconds,
             )
             return JSONResponse(
                 status_code=429,
