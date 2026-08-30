@@ -12,6 +12,7 @@ from . import (
     hosts,
     hunt,
     ingest_cloudflare,
+    ingest_webhook,
     stream,
 )
 
@@ -24,4 +25,5 @@ __all__ = [
     "canary",
     "evidence",
     "ingest_cloudflare",
+    "ingest_webhook",
 ]

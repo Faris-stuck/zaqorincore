@@ -31,6 +31,7 @@ from .api.v1 import (
     hosts,
     hunt,
     ingest_cloudflare,
+    ingest_webhook,
     soar as soar_api,
     stream,
 )
@@ -106,7 +107,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ZaqorinCore Server",
-        version="1.7.7",
+        version="2.0.0",
         description=(
             "Central server for ZaqorinCore. Accepts WebSocket streams "
             "from zaqorin-agent, persists events to PostgreSQL, runs "
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(evidence.router)
     app.include_router(soar_api.router)
     app.include_router(ingest_cloudflare.router)
+    app.include_router(ingest_webhook.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
     # root; if the directory is missing (e.g. server-only deployment), the
