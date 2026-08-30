@@ -8,6 +8,7 @@ from . import (
     agents,
     alerts,
     audit,
+    audit_bots,
     auth,
     canary,
     evidence,
