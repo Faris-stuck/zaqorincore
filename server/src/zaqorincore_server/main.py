@@ -43,6 +43,7 @@ from .detectors import runner as detector_runner
 from .dispatcher import Dispatcher
 from .logging import configure_logging, get_logger
 from .rate_limit import RateLimitMiddleware
+from .request_id import RequestIDMiddleware
 from .security import SecurityHeadersMiddleware
 from .soar.worker import SoarWorker
 from .streams.publisher import close_redis, ensure_consumer_group, get_redis
@@ -130,6 +131,12 @@ def create_app() -> FastAPI:
     # ``/healthz/deps``) and the bundled SPA (``/``, ``/static/``)
     # are excluded inside the middleware.
     app.add_middleware(RateLimitMiddleware)
+    # Request-ID middleware LAST so it runs FIRST in Starlette's
+    # LIFO ordering — every log line emitted by any downstream
+    # layer (rate_limit, audit, ingest) inherits the same
+    # ``request_id`` structlog contextvar for the lifetime of
+    # this request. See ops/cycle-26.
+    app.add_middleware(RequestIDMiddleware)
 
     # Health (no /api prefix)
     app.include_router(health.router)
