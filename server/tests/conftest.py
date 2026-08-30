@@ -126,6 +126,14 @@ async def app_client(engine) -> AsyncIterator[AsyncClient]:
     from zaqorincore_server.main import create_app  # noqa: PLC0415
 
     os.environ.pop("ZAQORIN_API_KEY", None)
+    # v2.1.0 (IMP-1): also clear the new role-scoped keys so the
+    # default fixture stays in "open dev mode" (no auth required)
+    # regardless of what the running shell has set. Tests that
+    # exercise the role layer use ``app_client_with_auth`` from
+    # the role-test modules and re-set the env explicitly.
+    os.environ.pop("ZAQORIN_API_KEY_READ", None)
+    os.environ.pop("ZAQORIN_API_KEY_WRITE", None)
+    os.environ.pop("ZAQORIN_API_KEY_INGEST", None)
     reset_settings()
     app = create_app()
     transport = ASGITransport(app=app)

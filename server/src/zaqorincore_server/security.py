@@ -10,25 +10,20 @@ Two pieces:
    esm.sh CDN. Once the React bundle is vendored locally
    (post-1.0), the CSP can be tightened to ``default-src 'self'``.
 
-2. ``require_api_key`` — FastAPI dependency that enforces the
-   ``X-API-Key`` shared secret on protected routers (currently
-   the SOAR ``/api/v1/soar/*`` family). Constant-time
-   comparison via ``hmac.compare_digest`` so a brute-force
-   timing leak is not feasible. When ``api_key`` is unset the
-   dependency is a no-op and a startup warning is logged once
-   (operators must explicitly opt in to a no-auth deploy).
+2. ``require_api_key`` — thin re-export of the role-based
+   ``require_role`` dependency from ``auth.py``. Kept here for
+   backward compatibility with routers/tests written against the
+   F6 (v1.7.6) binary ``X-API-Key`` contract. New code should
+   import ``require_role`` from ``auth`` directly so it can read
+   the resolved role off ``request.state``.
 """
 from __future__ import annotations
 
-import hmac
 import logging
 
-from fastapi import Header, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-
-from .config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -58,47 +53,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Module-level flag so the warning fires once per process, not
-# on every protected request.
-_unauth_warned = False
+# F6 (v1.7.6) used to keep the verification logic here. The
+# role-based dep in ``auth.py`` owns the constant-time comparison
+# and the no-auth-dev-mode warning now. We re-export it under the
+# old name so routers written against the F6 contract keep working.
+from .auth import require_role as require_api_key  # noqa: E402,F401
 
 
-def require_api_key(
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-) -> None:
-    """FastAPI dependency that enforces the X-API-Key header.
-
-    Behavior:
-
-    - If ``Settings.api_key`` is empty: pass through and warn
-      once (operator-acknowledged dev mode).
-    - If the header is missing: 401.
-    - If the header does not match (constant-time): 401.
-
-    The X-API-Key name is conventional for an API gateway /
-    reverse proxy model. The SOAR endpoints are intended to
-    be hit by an internal scheduler or a SOC operator, not
-    by an end-user browser session.
-    """
-    global _unauth_warned
-    expected = get_settings().api_key
-    if not expected:
-        if not _unauth_warned:
-            log.warning(
-                "soar: ZAQORIN_API_KEY is unset; SOAR endpoints "
-                "are open. Set ZAQORIN_API_KEY in any non-dev deploy."
-            )
-            _unauth_warned = True
-        return
-    if not x_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-API-Key header missing",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
-    if not hmac.compare_digest(x_api_key.encode("utf-8"), expected.encode("utf-8")):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-API-Key invalid",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
+__all__ = [
+    "SecurityHeadersMiddleware",
+    "require_api_key",
+]

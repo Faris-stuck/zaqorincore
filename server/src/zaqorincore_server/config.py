@@ -108,6 +108,16 @@ class Settings(BaseSettings):
     # the server — no clients have a long-lived token.
     api_key: str = ""
 
+    # --- Role-based API auth (v2.1.0 IMP-1 second slice) ---
+    # Three named-role keys that supersede the single shared
+    # ``api_key``. Any subset may be set; unset roles are not
+    # accepted. The legacy ``api_key`` is still honoured and is
+    # treated as ``write`` so an in-place migration from F6 does
+    # not lock out the old secret.
+    api_key_read: str = ""
+    api_key_write: str = ""
+    api_key_ingest: str = ""
+
 
 _settings: Settings | None = None
 
