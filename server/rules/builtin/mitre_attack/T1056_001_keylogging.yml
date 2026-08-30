@@ -1,0 +1,48 @@
+title: Keylogging or input capture on a host (T1056.001)
+id: 2b4e7c91-5d3a-4f8b-9e6c-1a2b3c4d5e6f
+description: |
+  Detects T1056.001 Input Capture: Keylogging activity on Linux/macOS
+  endpoints. Adversaries plant user-space keyloggers to harvest
+  credentials, session tokens, and chat content after gaining a
+  foothold. This rule fires on three high-confidence signals:
+
+    1. Dedicated keylogging tools (logkeys, xspy, lkl, pykeylogger,
+       uberkey, xkey, xinput test, evtest --grab) anchored on word
+       boundaries so 'logkeys' is not matched inside 'logkeyed.bin'.
+    2. Suspect file operations against the canonical keylogger output
+       paths (/var/log/kbd*, /tmp/.logkeys, /tmp/.xkeylog,
+       $HOME/.xkey.log, /var/tmp/kbd.log).
+    3. strace invoked with read-only tracing (-e read) on the input
+       subsystem — a common ad-hoc keylogger technique that does not
+       require installing a binary.
+
+  Filtered out:
+  - strace without `-e read` (general debugging)
+  - xdotool / xset (legitimate input automation)
+  - system-user invocations from package managers and from
+    known-good systemd paths so the rule does not fire on every
+    desktop-environment startup
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1056/001/
+  - https://github.com/kernc/logkeys
+  - https://man.archlinux.org/man/strace.1
+tags:
+  - attack.t1056.001
+  - attack.collection
+  - attack.credential_access
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(?<![A-Za-z0-9_])(logkeys|xspy|lkl|uberkey|pykeylogger|xkeylog|xinput\s+test\s+--grab|evtest\s+--grab)(?![A-Za-z0-9_])|/var/log/kbd|/tmp/\.logkeys|/tmp/\.xkeylog|/var/tmp/kbd\.log|\bstrace\b[^\n|;&]*-e\s+read\b[^\n|;&]*(/dev/input/[^|;&\s]*|/dev/tty\b|/proc/\d+/fd/0\b)'
+  filter_legit:
+    command: 're:(?i)(?<![A-Za-z0-9_])(xdotool|xset|setxkbmap|xkbcomp)(?![A-Za-z0-9_])'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
