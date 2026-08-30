@@ -5,6 +5,7 @@ exported so main.py can `from .api import v1` and mount them all.
 """
 
 from . import (
+    agents,
     alerts,
     audit,
     auth,
@@ -32,4 +33,5 @@ __all__ = [
     "auth",
     "audit",
     "healthcheck",
+    "agents",
 ]

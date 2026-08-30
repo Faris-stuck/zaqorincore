@@ -74,6 +74,17 @@ class HostConnectionRegistry:
         """
         return len(self._conns)
 
+    def host_ids(self) -> list[uuid.UUID]:
+        """Return a snapshot of currently registered host IDs.
+
+        Read-only accessor for the ``GET /api/v1/agents`` endpoint
+        (cycle 31). Returns a fresh list every call so callers can
+        iterate without holding the registry lock. The same
+        multi-worker caveat as ``count()`` applies — the snapshot
+        reflects only the worker that handled the request.
+        """
+        return list(self._conns.keys())
+
 
 # Module-level singleton, owned by the FastAPI lifespan.
 module_registry = HostConnectionRegistry()
