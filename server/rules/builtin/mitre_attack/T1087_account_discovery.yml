@@ -1,0 +1,47 @@
+title: Account discovery via system enumeration commands
+id: 7a31c5e9-4d8b-4e2f-9b1a-3f7c2d8e6a55
+description: |
+  Detects the canonical T1087 account-discovery primitives executed
+  from a shell: listing local users (`net user`, `getent passwd`,
+  `cat /etc/passwd`, `compgen -u`), enumerating groups (`getent
+  group`, `groups`), domain-account lookups (`ldapsearch`,
+  `dsquery user`, `net accounts /domain`, `rpcclient -U`
+  enumeration), and the `id` command invoked on multiple targets in
+  a single line.
+
+  These are the post-foothold discovery steps an operator runs
+  immediately after a successful login. Filtered out:
+  - `id` (no argument) — every shell user runs `id` interactively
+    and it is not an enumeration signal on its own
+  - `id <self>` (current uid only) — same rationale
+  - `getent passwd root` — single-account, non-enumeration
+
+  Anchoring rules:
+  - enumeration verbs use `\b` boundaries (`net` is anchored, so
+    `network` / `netcat` do NOT match)
+  - target paths use word boundaries and `^`/`\s` anchors
+  - multiple-target `id` is detected only when the line contains
+    at least two user-shaped arguments
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1087/
+  - https://attack.mitre.org/techniques/T1087/001/
+  - https://attack.mitre.org/techniques/T1087/002/
+tags:
+  - attack.t1087
+  - attack.discovery
+  - nist_csf.ID.AM
+level: medium
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(\bnet\b\s+user\b\s*/domain|\bdsquery\b\s+user\b|\bldapsearch\b\s+[^|;&]*\b(objectClass=user|samAccountType)\b|\bnet\b\s+accounts\b\s*/domain|\brpcclient\b\s+-U\b\s+[^|;&]*\s+-c\s+enumdomusers|\bgetent\b\s+passwd\b\s+[^|;&]*[\s;|]+[^|;&]*\bgetent\b|\bcompgen\b\s+-u\b|(^|[|;&])\s*id\b\s+\S+.*\s+id\b)'
+  filter_single_id:
+    command: 're:(?i)^\s*id\s*$|^\s*id\s+(\$\(whoami\)|\$\{USER\}|\$\{USERNAME\}|whoami|`whoami`)\s*$'
+  condition: selection and not filter_single_id
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
