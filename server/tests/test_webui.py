@@ -67,14 +67,28 @@ def test_security_headers_on_api(client) -> None:
     assert resp.headers.get("x-content-type-options") == "nosniff"
 
 
-def test_app_version_bumped_to_1_0_0() -> None:
-    """FastAPI app version reflects v1.0.0 launch (accepts 0.9.0 too)."""
+def test_app_version_matches_repo() -> None:
+    """FastAPI app version reflects the current tagged release.
+
+    Reads the version from pyproject.toml at test time so this test
+    does not need to be updated each release.
+    """
+    from pathlib import Path
+
+    import tomllib
+
     from zaqorincore_server.main import create_app
 
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject.open("rb") as fh:
+        pyproject_version = tomllib.load(fh)["project"]["version"]
+
     app = create_app()
-    # The launch version is 1.0.0; the v0.9.0 development branch
-    # is still acceptable so older test environments can run this.
-    assert app.version in ("0.9.0", "1.0.0"), f"unexpected version {app.version!r}"
+    assert app.version == pyproject_version, (
+        f"app.version={app.version!r} but pyproject.toml says "
+        f"{pyproject_version!r}. Update src/zaqorincore_server/main.py "
+        f"FastAPI(version=...) to match pyproject.toml before tagging."
+    )
 
 
 def test_spa_index_does_not_leak_dir_listing(client) -> None:

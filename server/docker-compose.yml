@@ -1,14 +1,18 @@
-# ZaqorinCore server stack (Phase 2.5+)
+# ZaqorinCore server stack.
 #
-# Use this when you want a self-contained environment without
-# relying on the existing `laporin-redis` (db0) or the host
-# Cogniflux postgres. Default config maps:
+# Self-contained environment for local development and tests.
+# Default port mappings (override with shell env if conflicts):
 #   postgres -> 127.0.0.1:25432
 #   redis    -> 127.0.0.1:26379
 #   server   -> 127.0.0.1:28000
 #
-# For dev you can reuse the existing containers and skip this
-# stack entirely.
+# Required before `docker compose up`:
+#   export ZAQORIN_DB_PASSWORD=<random-strong-password>
+# The compose file does NOT default a database password — operators
+# must set one explicitly. The compose stack uses it for both the
+# Postgres bootstrap and the server's DATABASE_URL.
+#
+# Generate one with:    openssl rand -hex 24
 
 services:
   postgres:
@@ -16,7 +20,10 @@ services:
     container_name: zc-postgres
     environment:
       POSTGRES_USER: zaqorin
-      POSTGRES_PASSWORD: ${ZAQORIN_DB_PASSWORD:-zaqorin}
+      # Force the operator to set a real password. If ZAQORIN_DB_PASSWORD
+      # is unset or empty, the POSTGRES_PASSWORD env is left empty and
+      # Postgres will refuse to start — that is the intended fail-fast.
+      POSTGRES_PASSWORD: ${ZAQORIN_DB_PASSWORD}
       POSTGRES_DB: zaqorin
     ports:
       - "127.0.0.1:25432:5432"
@@ -55,7 +62,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      ZAQORIN_DATABASE_URL: postgresql+asyncpg://zaqorin:${ZAQORIN_DB_PASSWORD:-zaqorin}@postgres:5432/zaqorin
+      ZAQORIN_DATABASE_URL: postgresql+asyncpg://zaqorin:${ZAQORIN_DB_PASSWORD}@postgres:5432/zaqorin
       ZAQORIN_REDIS_URL: redis://redis:6379/0
       ZAQORIN_SERVER_HOST: 0.0.0.0
       ZAQORIN_SERVER_PORT: 8000

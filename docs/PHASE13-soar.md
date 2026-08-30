@@ -422,14 +422,16 @@ In `server/src/zaqorincore_server/soar/config.py`, add
 In `soar.toml`, drop in:
 
 ```toml
-[backends.opsgenie]
+[backends.<your_backend_name>]
 enabled = true
 cooldown_sec = 60
 severity_min = "high"
 tags_filter = []
 max_retries = 5
 timeout_sec = 10.0
-api_key = "REPLACE_WITH_OPSGENIE_API_KEY"
+# Any additional keys here are passed through to BackendConfig.extra.
+# For a real API key, set it from a secrets manager — never commit one.
+api_key = "set-me-via-environment-variable"
 ```
 
 The `load_config()` helper parses any key under
