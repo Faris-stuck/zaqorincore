@@ -188,3 +188,74 @@ async def test_audit_limit_bounds_enforced(app_client: AsyncClient) -> None:
 
     r = await app_client.get("/api/v1/audit?limit=1001")
     assert r.status_code == 422
+
+
+async def test_audit_query_emits_structured_log(
+    app_client: AsyncClient,
+) -> None:
+    """Each successful ``GET /api/v1/audit`` emits ONE structured
+    ``audit.query`` log line whose payload captures the filter
+    shape and result count.
+
+    Cycle 25 adds operator-grade observability on top of the
+    in-memory audit log so operators can correlate audit reads
+    with the entries they returned. This test pins the contract:
+    one log event per query, exact event name, all filters
+    surfaced as fields, and the resolved ``count`` reported so
+    operators can spot zero-result queries.
+
+    Filter values come back as primitives (string / None / int);
+    ``since`` is serialized to ISO-8601 by the handler. The
+    caller_role field is None in dev mode (no ``request.state.role``).
+    """
+    import structlog
+
+    audit.record(actor="write", action="create canary", target="c1")
+    audit.record(actor="read", action="GET events", target="-")
+
+    with structlog.testing.capture_logs() as caplogs:
+        r = await app_client.get(
+            "/api/v1/audit",
+            params={"actor": "write", "limit": 50},
+        )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 1
+
+    events = [e for e in caplogs if e.get("event") == "audit.query"]
+    assert len(events) == 1, events
+    evt = events[0]
+    assert evt["log_level"] == "info"
+    assert evt["actor_filter"] == "write"
+    assert evt["action_filter"] is None
+    assert evt["since"] is None
+    assert evt["limit"] == 50
+    assert evt["returned"] == 1
+    # caller_role is None in dev mode (no auth dep).
+    assert evt["caller_role"] is None
+
+
+async def test_audit_query_log_with_no_records(
+    app_client: AsyncClient,
+) -> None:
+    """Even an empty-buffer query emits its ``audit.query`` log
+    line so operators can detect polling probes / dashboard
+    refreshes against a silent system.
+
+    The ``returned`` field must be 0 in that case so an alert
+    on ``returned=0`` patterns can fire.
+    """
+    import structlog
+
+    with structlog.testing.capture_logs() as caplogs:
+        r = await app_client.get("/api/v1/audit")
+
+    assert r.status_code == 200
+    assert r.json() == {"count": 0, "items": []}
+
+    events = [e for e in caplogs if e.get("event") == "audit.query"]
+    assert len(events) == 1, events
+    evt = events[0]
+    assert evt["returned"] == 0
+    assert evt["limit"] == 100  # default

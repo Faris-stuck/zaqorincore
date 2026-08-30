@@ -27,10 +27,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ... import audit
+from ...logging import get_logger
 from ...security import require_api_key
+
+
+log = get_logger(__name__)
 
 
 router = APIRouter(
@@ -42,6 +46,7 @@ router = APIRouter(
 
 @router.get("")
 async def list_audit(
+    request: Request,
     actor: str | None = Query(default=None, description="substring match on actor"),
     action: str | None = Query(default=None, description="substring match on action"),
     since: datetime | None = Query(default=None, description="ISO-8601 lower bound (inclusive)"),
@@ -52,6 +57,12 @@ async def list_audit(
     Optional filters narrow the result set. An empty buffer
     yields ``{"count": 0, "items": []}`` so callers never see a
     ``null``.
+
+    Every successful query emits one structured ``audit.query``
+    log line so operators can correlate in-process audit reads
+    with the underlying entries they returned. Logging happens
+    AFTER the snapshot is taken so the log line never includes
+    payload contents (only the filter shape + result count).
     """
     raw = audit.snapshot(limit=limit)
     items = raw
@@ -80,6 +91,16 @@ async def list_audit(
             if ts >= cutoff:
                 filtered.append(it)
         items = filtered
+    role = getattr(request.state, "role", None)
+    log.info(
+        "audit.query",
+        actor_filter=actor,
+        action_filter=action,
+        since=since.isoformat() if since is not None else None,
+        limit=limit,
+        returned=len(items),
+        caller_role=getattr(role, "name", None) if role else None,
+    )
     return {"count": len(items), "items": items}
 
 
