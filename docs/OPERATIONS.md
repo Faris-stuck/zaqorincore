@@ -276,3 +276,80 @@ just a curl loop from cron:
 `status: "degraded"` fires when any single dep is slow, down, or
 backlogged; treat it as a page-able signal in the same rotation as
 `/healthz` 5xx.
+
+## 9. v2.3.0 — rate-limit, log clearing, CHANGELOG backfill
+
+v2.3.0 closes three follow-ups from the v2.2.0 ship: in-process API
+rate limiting (cycle 13), the `T1070.001` log-clearing Sigma rule
+(cycle 15), and a CHANGELOG backfill for v2.0.0 / v2.1.0 / v2.1.6 /
+v2.2.0 (cycle 17). Use this section as the operator entry point.
+
+### 9.1 In-process API rate limit (cycle 13)
+
+The server applies `RateLimitMiddleware` to every request before
+the route handler runs. It is a **per-process sliding window** —
+no Redis dependency — sized by a single global budget that all v1
+routes share.
+
+| Setting (env)                       | Default | Meaning                                  |
+|-------------------------------------|---------|------------------------------------------|
+| `ZAQORIN_RATE_LIMIT_ENABLED`        | `true`  | Set `false` to disable the middleware.   |
+| `ZAQORIN_RATE_LIMIT_PER_MIN`        | `120`   | Per-key/IP budget over a rolling 60s.    |
+
+Identity resolution, in order: the `X-API-Key` header (bucketed
+as `key:<value>`), then `request.client.host` (bucketed as
+`ip:<addr>`), then the literal string `anonymous` when neither is
+present — so an in-process test caller cannot bypass the limiter.
+
+Excluded paths (never throttled):
+
+- `/healthz`, `/readyz`, `/healthz/deps` — orchestrator probes.
+- `/`, `/index.html`, `/static/*` — bundled SPA shell.
+
+Why per-process and not Redis-backed? The middleware is
+defence-in-depth, not the canonical access control layer — the
+role-based `require_role` dep is. A multi-replica deploy will get
+`N × budget` effective limit, which is acceptable for a single-
+tenant SOC tool. Plan a Redis-backed token bucket only if you see
+rejection traffic that should be globally throttled.
+
+On rejection the middleware returns `429 Too Many Requests` with
+a `Retry-After` header in seconds. Tuning tips:
+
+- Confirm legitimate traffic in `/healthz/deps` and the rate-limit
+  rejection log line before raising the budget.
+- Each rejection is cheap (deque eviction + len); do not alarm on
+  the first 429 from a single peer — wait for sustained rate.
+- Bucket state is held in a `dict` keyed by `key:` / `ip:` /
+  `anonymous`; it is pruned every 256 accepted requests so a long
+  run does not accumulate dead buckets. Restart clears all state.
+
+### 9.2 T1070.001 — log clearing rule (cycle 15)
+
+`server/rules/builtin/mitre_attack/T1070_log_clearing.yml` (added
+on top of the v2.2.0 indicator-removal rule) catches deliberate log
+tampering:
+
+- `truncate`, `> /var/log/...`, `>> /dev/null` on log/journal files
+- `logrotate -f` / `logrotate --force` on custom configs
+- shell-level redirection that empties or replaces `/var/log/*`
+
+Confirm the rule fires end-to-end:
+
+```bash
+ssh user@agent-host 'truncate -s 0 /var/log/auth.log'
+ssh user@agent-host 'logrotate -f /etc/logrotate.d/custom-app'
+```
+
+Expected alert: level `high`, dedup `<user>:<source_ip>`, ATT&CK
+`T1070.001`. Pair it with the existing `T1070.004` rule to get
+both "delete the evidence" and "rewrite the evidence" coverage.
+
+### 9.3 CHANGELOG backfill (cycle 17)
+
+`CHANGELOG.md` now carries entries for every minor release back to
+v2.0.0 so `git log --oneline | grep "^v2"` and the changelog agree.
+No code action — operators reading older release notes can trust
+the version they are on. If you upgrade a deployment and the
+changelog still shows only v2.2.0, pull `main`; the backfill landed
+in `1476eb3`.
