@@ -151,6 +151,67 @@ the runtime code lands in the next three feature releases.
   section in the project's Obsidian vault note
   `Proyek - Cyber Sentinel ZaqorinCore.md`.
 
+## [2.5.0] - 2026-08-30 — Q3 Observability & Error Contract Pack
+
+Continues the Q3 quarterly batch. v2.2.0 closed the detection
+and ops surface; v2.5.0 ships the observability hooks and a
+safer-by-default error contract on top of the same engine.
+No engine changes, no new dependencies, opt-in where it
+matters.
+
+### Added
+
+- **Per-request `request_id` in structlog** (cycle 26) —
+  every log line emitted while a request is in flight carries
+  the same `request_id` token (contextvars-based), and the
+  inbound `X-Request-ID` header is echoed back so a client can
+  correlate a curl with the server's log line. Falls back to
+  a generated UUID v4 when the header is absent. +136 LOC,
+  4 tests. See [docs/OPERATIONS.md §11](docs/OPERATIONS.md).
+- **structlog 429 events in rate_limit middleware** (cycle 24)
+  — every throttled response emits a structured log line with
+  a hash of the client IP (no PII leak) and the bucket state.
+  Operators get a single greppable signal for rate-limit
+  activity. +29 LOC.
+- **Structured `audit.query` log line on every
+  `GET /api/v1/audit`** (cycle 25) — `actor`, `filters`,
+  `result_count`, and `request_id` are all logged in a single
+  structured event so the audit endpoint itself is auditable.
+  +18 LOC.
+- **Structured error response envelope** (cycle 28) —
+  `error.code`, `error.message`, `error.request_id`,
+  `error.docs` returned from a single JSON shape when
+  `ZAQORIN_ERROR_ENVELOPE=1`. **Default OFF** so the existing
+  FastAPI default response is unchanged for current callers;
+  new consumers opt in. Excluded paths (`/healthz`,
+  `/healthz/deps`, `/api/v1/healthcheck`) keep their
+  ops-friendly shape. +133 LOC, 7 tests. See
+  [docs/OPERATIONS.md §11](docs/OPERATIONS.md).
+
+### Changed
+
+- **OPERATIONS.md** — section 11 documents the request_id
+  contract, the audit-query log line, and the opt-in
+  error envelope with copy-pasteable curl examples.
+  (Deferred to a follow-up cycle; this CHANGELOG entry is the
+  source of truth until the OPERATIONS.md patch ships.)
+
+### Notes
+
+- **Engine scope:** zero changes under
+  `server/src/zaqorincore_server/rule_engine/`. All four
+  additions are request-handler and middleware-layer work.
+- **Opt-in surface:** the error envelope is gated on
+  `ZAQORIN_ERROR_ENVELOPE=1` to keep the default contract
+  stable for every existing caller. Promote to default ON
+  in a later minor once the rollout is verified.
+- **Honest gap:** the `request_id` propagation is
+  contextvar-based and therefore does not survive across
+  `run_in_executor` boundaries. Async-only handlers
+  (the entire `/api/v1/*` and `/soar/*` surface) are fully
+  covered; background tasks and the agent forwarder need
+  a separate pass if/when they log inside the request scope.
+
 ## [2.2.0] - 2026-08-30 — Q3 Detection + Ops Pack
 
 First quarterly pack that batches multi-track small cycles
