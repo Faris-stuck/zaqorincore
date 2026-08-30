@@ -1,0 +1,32 @@
+title: Privilege escalation via Setuid/Setgid binary abuse
+id: 7c2a4f91-1e6d-4b8a-9c3e-2d5f7a8b4e01
+description: |
+  Detects attempts to create or modify Setuid (chmod u+s) / Setgid
+  (chmod g+s) binaries, or to chmod binaries with the 4xxx permission
+  pattern on system paths. Adversaries abuse SUID/SGID bits to elevate
+  privileges and run code with the owner of the binary (commonly root).
+  Legitimate package-manager operations are excluded.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1548/
+  - https://attack.mitre.org/techniques/T1548/001/
+tags:
+  - attack.t1548
+  - attack.privilege_escalation
+  - nist_csf.PR.AC
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(chmod|install|cp|mv)\b'
+    command: 're:(?i)(\bchmod\s+([ugoa]*[+rs]?[us]+[+]?[s+]?[ugoa]*\s+)?(\+?4\d{3}\s+|\+[us]\b|\+[gG][sS]\b)|\bchmod\s+[ug]\+[sx]\b|\binstall\s+-m\s*[uoga]*[+rs]?[sS]?[ugoa]*\s+-o\s+root\b|\b(cp|mv)\s+/bin/\S+\s+/bin/\S+\s*&&\s*chmod\s+4)'
+  filter_legit:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman)\b'
+    command: 're:(?i)(/var/lib/dpkg|/var/lib/rpm|/var/cache/apt|/var/cache/dnf|/usr/local/bin/(setup|install)\.sh)'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
