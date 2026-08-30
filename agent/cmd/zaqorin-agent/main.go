@@ -10,6 +10,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -21,10 +22,46 @@ import (
 	"github.com/Faris-stuck/zaqorincore/agent/internal/response"
 )
 
+// version is the agent's semver string. The default "dev" is
+// overridden at build time via:
+//
+//	go build -ldflags "-X main.version=vX.Y.Z" ./cmd/zaqorin-agent
+//
+// Leaving it at "dev" in source keeps local `go run` and tests
+// useful while CI can stamp real release numbers.
+var version = "dev"
+
+const usage = `zaqorin-agent — Cyber Sentinel log tail + auto-response daemon
+
+Usage:
+  zaqorin-agent [flags]
+
+Flags:
+  --config <path>     path to the agent TOML config (default /etc/zaqorin/agent.toml)
+  --log-format <fmt>  log output format: json or text (default json)
+  --version           print version and exit
+  --help              print this help and exit
+`
+
+// printVersion writes the agent name + version (overridable at
+// build time via -ldflags "-X main.version=vX.Y.Z") to w followed
+// by a newline. Exposed as a helper so main_test.go can assert the
+// format without invoking main().
+func printVersion(w io.Writer) {
+	fmt.Fprintf(w, "zaqorin-agent %s\n", version)
+}
+
 func main() {
 	cfgPath := flag.String("config", "/etc/zaqorin/agent.toml", "path to the agent TOML config file")
 	formatStr := flag.String("log-format", "json", "log output format: json or text")
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
+
+	if *showVersion {
+		printVersion(os.Stdout)
+		return
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
