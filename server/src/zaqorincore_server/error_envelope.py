@@ -108,6 +108,7 @@ from starlette.responses import Response
 _EXCLUDED_PREFIXES: tuple[str, ...] = (
     "/healthz",
     "/readyz",
+    "/api/v1/healthcheck",
     "/api/v1/ingest/cloudflare",
     "/api/v1/ingest/webhook",
     "/static",

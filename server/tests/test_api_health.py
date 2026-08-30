@@ -72,3 +72,50 @@ async def test_alerts_empty(app_client: AsyncClient) -> None:
     r = await app_client.get("/api/v1/alerts")
     assert r.status_code == 200
     assert r.json() == {"items": [], "next_before": None}
+
+
+async def test_api_v1_healthcheck_shape(app_client: AsyncClient) -> None:
+    """GET /api/v1/healthcheck returns the ops-dashboard summary.
+
+    Contract: {ok: bool, version: str, rules_loaded: int, agents_connected: int}.
+    The endpoint is always 200 so scrape tools get a stable body shape.
+    """
+    r = await app_client.get("/api/v1/healthcheck")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"ok", "version", "rules_loaded", "agents_connected"}
+    assert isinstance(body["ok"], bool)
+    assert isinstance(body["version"], str)
+    assert body["version"]  # non-empty
+    assert isinstance(body["rules_loaded"], int)
+    assert isinstance(body["agents_connected"], int)
+
+
+async def test_api_v1_healthcheck_counts_real_rules(app_client: AsyncClient) -> None:
+    """rules_loaded reflects the actual filesystem under server/rules/builtin/.
+
+    The bundled pack ships a non-zero number of *.yml rules; the count
+    must be positive and must agree with what the helper would compute
+    by walking the same directory.
+    """
+    from zaqorincore_server.api.v1.healthcheck import _count_yml_files, _DEFAULT_RULES_DIR
+
+    r = await app_client.get("/api/v1/healthcheck")
+    body = r.json()
+    assert body["rules_loaded"] == _count_yml_files(_DEFAULT_RULES_DIR)
+    # Sanity: the bundled pack is non-empty in stock main.
+    assert body["rules_loaded"] > 0
+
+
+async def test_api_v1_healthcheck_no_agents_in_tests(app_client: AsyncClient) -> None:
+    """agents_connected is 0 when no WebSocket has registered.
+
+    The test harness does not spin up an agent, so the dispatcher
+    registry stays empty. The endpoint must report 0, not -1 or
+    a stale value from a previous test (the registry is module-
+    level, but the engine fixture resets the app per-test).
+    """
+    r = await app_client.get("/api/v1/healthcheck")
+    body = r.json()
+    assert body["agents_connected"] == 0
+    assert body["ok"] is True

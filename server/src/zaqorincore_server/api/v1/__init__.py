@@ -11,6 +11,7 @@ from . import (
     canary,
     evidence,
     events,
+    healthcheck,
     hosts,
     hunt,
     ingest_cloudflare,
@@ -30,4 +31,5 @@ __all__ = [
     "ingest_webhook",
     "auth",
     "audit",
+    "healthcheck",
 ]

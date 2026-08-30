@@ -63,6 +63,17 @@ class HostConnectionRegistry:
     def get(self, host_id: uuid.UUID):
         return self._conns.get(host_id)
 
+    def count(self) -> int:
+        """Return the number of currently registered host connections.
+
+        Read-only accessor for observability endpoints
+        (``GET /api/v1/healthcheck``). Not multi-process safe; on
+        a multi-worker deployment the count reflects only the
+        worker that handled the request, which is the same
+        limitation as ``get()`` and the registry overall.
+        """
+        return len(self._conns)
+
 
 # Module-level singleton, owned by the FastAPI lifespan.
 module_registry = HostConnectionRegistry()

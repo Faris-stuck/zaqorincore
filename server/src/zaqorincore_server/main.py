@@ -30,6 +30,7 @@ from .api.v1 import (
     canary,
     evidence,
     events,
+    healthcheck as healthcheck_api,
     hosts,
     hunt,
     ingest_cloudflare,
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest_webhook.router)
     app.include_router(auth_api.router)
     app.include_router(audit_api.router)
+    app.include_router(healthcheck_api.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
     # root; if the directory is missing (e.g. server-only deployment), the
