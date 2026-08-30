@@ -41,6 +41,7 @@ from .db import dispose_engine, get_session_factory, init_engine
 from .detectors import runner as detector_runner
 from .dispatcher import Dispatcher
 from .logging import configure_logging, get_logger
+from .rate_limit import RateLimitMiddleware
 from .security import SecurityHeadersMiddleware
 from .soar.worker import SoarWorker
 from .streams.publisher import close_redis, ensure_consumer_group, get_redis
@@ -121,6 +122,13 @@ def create_app() -> FastAPI:
 
     # Security headers first (innermost in Starlette = outermost in response)
     app.add_middleware(SecurityHeadersMiddleware)
+    # Rate limiter next; it sees the request before any router
+    # handler does and short-circuits with 429 before the auth
+    # dependency runs, which protects ``require_role`` itself from
+    # a flood. Health probes (``/healthz``, ``/readyz``,
+    # ``/healthz/deps``) and the bundled SPA (``/``, ``/static/``)
+    # are excluded inside the middleware.
+    app.add_middleware(RateLimitMiddleware)
 
     # Health (no /api prefix)
     app.include_router(health.router)

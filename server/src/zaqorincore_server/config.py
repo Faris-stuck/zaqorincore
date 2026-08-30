@@ -118,6 +118,17 @@ class Settings(BaseSettings):
     api_key_write: str = ""
     api_key_ingest: str = ""
 
+    # --- Rate limiting (v2.3.0 IMP-2 first slice) ---
+    # Sliding-window per-key/IP rate limiter applied as middleware.
+    # Defaults are deliberately generous: 120 req/min = 2 rps average,
+    # which is well above what any ZaqorinCore endpoint needs and is
+    # below the threshold where the agent or operator dashboard would
+    # notice a slowdown. Set ``enabled`` to ``false`` to bypass the
+    # middleware entirely (e.g. for a benchmark or a trusted-network
+    # deploy where the limiter is wasted overhead).
+    rate_limit_enabled: bool = True
+    rate_limit_per_min: int = Field(default=120, ge=1, le=1_000_000)
+
 
 _settings: Settings | None = None
 
