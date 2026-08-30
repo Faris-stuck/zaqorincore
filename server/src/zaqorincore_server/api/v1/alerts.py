@@ -10,13 +10,18 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 
 from ...db import get_session_factory
 from ...models.alert import Alert
+from ...security import require_api_key
 
-router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
+router = APIRouter(
+    prefix="/api/v1/alerts",
+    tags=["alerts"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 @router.get("")

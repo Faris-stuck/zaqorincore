@@ -13,9 +13,14 @@ from sqlalchemy import func, select as sa_select
 
 from ...db import get_session
 from ...models import Event, Host
+from ...security import require_api_key
 from ...service import host_service
 
-router = APIRouter(prefix="/api/v1/hosts", tags=["hosts"])
+router = APIRouter(
+    prefix="/api/v1/hosts",
+    tags=["hosts"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 class HostPatch(BaseModel):

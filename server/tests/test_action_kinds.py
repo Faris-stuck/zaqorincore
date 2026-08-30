@@ -109,7 +109,6 @@ def test_validate_ipv4_cidr_accepts() -> None:
     try:
         validate_target = action_kinds.validate_target
         validate_target("_test_cidr", "203.0.113.0/24")
-        validate_target("_test_cidr", "10.0.0.0/8")
     finally:
         action_kinds.get_kind = saved_get_kind
     assert original is not None  # sanity: we did not clobber KINDS
@@ -214,3 +213,110 @@ def test_canary_alert_does_not_require_opt_in() -> None:
 def test_evidence_capture_does_not_require_opt_in() -> None:
     """Evidence capture is read-only, safe by default."""
     assert get_kind("evidence_capture").requires_host_opt_in is False
+
+
+# --- F9: semantic deny-list on dangerous targets ---
+
+def test_validate_ipv4_rejects_unspecified_address() -> None:
+    """0.0.0.0 is the unspecified address; blocking it blackholes all traffic."""
+    with pytest.raises(ValueError, match="unspecified address"):
+        validate_target("block_ip", "0.0.0.0")
+
+
+def test_validate_ipv4_rejects_broadcast() -> None:
+    """255.255.255.255 is the IPv4 broadcast address."""
+    with pytest.raises(ValueError, match="broadcast address"):
+        validate_target("block_ip", "255.255.255.255")
+
+
+def test_validate_ipv4_rejects_loopback() -> None:
+    """127.0.0.1 is the host's own loopback — would self-DoS."""
+    with pytest.raises(ValueError, match="loopback"):
+        validate_target("block_ip", "127.0.0.1")
+
+
+def test_validate_ipv4_rejects_loopback_range() -> None:
+    """Any address in 127.0.0.0/8 hits the loopback stack."""
+    with pytest.raises(ValueError, match="loopback"):
+        validate_target("block_ip", "127.255.255.254")
+
+
+def test_validate_ipv4_rejects_multicast() -> None:
+    """224.0.0.1 is in the 224.0.0.0/4 multicast range."""
+    with pytest.raises(ValueError, match="multicast"):
+        validate_target("block_ip", "224.0.0.1")
+
+
+def test_validate_ipv4_cidr_rejects_slash_zero() -> None:
+    """A /0 CIDR covers the entire IPv4 internet."""
+    with pytest.raises(ValueError, match="/0 prefix"):
+        validate_target("block_ip", "0.0.0.0/0") if False else _validate_cidr("0.0.0.0/0")
+
+
+def test_validate_ipv4_cidr_rejects_wide_prefix() -> None:
+    """A /8 prefix covers 16M+ addresses."""
+    with pytest.raises(ValueError, match=r"/8 prefix"):
+        _validate_cidr("10.0.0.0/8")
+
+
+def test_validate_ipv4_cidr_rejects_loopback_network() -> None:
+    """127.0.0.0/24 is a perfectly-formed CIDR but lands in loopback."""
+    with pytest.raises(ValueError, match="loopback"):
+        _validate_cidr("127.0.0.0/24")
+
+
+def test_validate_ipv4_cidr_accepts_normal_target() -> None:
+    """203.0.113.0/24 (TEST-NET-3) is fine — narrow, routable, not dangerous."""
+    _validate_cidr("203.0.113.0/24")  # no exception
+
+
+def test_override_env_lets_dangerous_targets_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ZAQORIN_ALLOW_DANGEROUS_TARGETS=1 unlocks everything.
+
+    Operators who deliberately want to block a wide range can flip
+    the env var at startup. The flag is read on every call so a
+    test can flip it without restarting the process.
+    """
+    monkeypatch.setenv("ZAQORIN_ALLOW_DANGEROUS_TARGETS", "1")
+    # Should no longer raise.
+    validate_target("block_ip", "0.0.0.0")
+    validate_target("block_ip", "127.0.0.1")
+    _validate_cidr("0.0.0.0/0")
+    _validate_cidr("10.0.0.0/8")
+
+
+def test_override_env_off_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sanity: without the env var, dangerous targets are rejected."""
+    monkeypatch.delenv("ZAQORIN_ALLOW_DANGEROUS_TARGETS", raising=False)
+    with pytest.raises(ValueError, match="unspecified address"):
+        validate_target("block_ip", "0.0.0.0")
+
+
+def _validate_cidr(target: str) -> None:
+    """Validate a CIDR target by registering a throwaway ipv4_cidr kind.
+
+    The 9 production kinds don't include an ipv4_cidr shape, so we
+    monkey-patch a temporary kind for the duration of one call.
+    """
+    from zaqorincore_server import action_kinds
+
+    class _CidrKind:
+        target_shape = "ipv4_cidr"
+
+    original = action_kinds.KINDS.get("block_ip")
+    saved_get_kind = action_kinds.get_kind
+
+    def _fake_get_kind(name: str):
+        if name == "_test_cidr":
+            return _CidrKind()
+        return saved_get_kind(name)
+
+    action_kinds.get_kind = _fake_get_kind
+    try:
+        action_kinds.validate_target("_test_cidr", target)
+    finally:
+        action_kinds.get_kind = saved_get_kind

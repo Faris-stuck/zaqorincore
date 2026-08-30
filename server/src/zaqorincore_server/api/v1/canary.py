@@ -20,13 +20,18 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
 from ...canary import CanarySpec, make_canary
+from ...security import require_api_key
 
 
-router = APIRouter(prefix="/api/v1/canary", tags=["canary"])
+router = APIRouter(
+    prefix="/api/v1/canary",
+    tags=["canary"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 CanaryKindLit = Literal["file", "tcp_socket", "http_endpoint", "credential"]

@@ -42,7 +42,7 @@ os.environ.setdefault("ZAQORIN_STREAMS_ENABLED", "false")
 # drive the runner directly.
 os.environ.setdefault("ZAQORIN_DETECTORS_ENABLED", "false")
 
-from zaqorincore_server.config import get_settings  # noqa: E402
+from zaqorincore_server.config import get_settings, reset_settings  # noqa: E402
 from zaqorincore_server.models import Base  # noqa: E402
 
 
@@ -110,9 +110,23 @@ async def session(engine) -> AsyncIterator[AsyncSession]:
 
 @pytest_asyncio.fixture
 async def app_client(engine) -> AsyncIterator[AsyncClient]:
-    """An httpx AsyncClient wired to the FastAPI app via ASGI in-memory."""
+    """An httpx AsyncClient wired to the FastAPI app via ASGI in-memory.
+
+    Default mode is "dev" (ZAQORIN_API_KEY unset, so require_api_key
+    is a no-op). Tests that want to exercise the auth path explicitly
+    use the ``app_client_with_auth`` fixture from
+    ``test_routers_api_auth.py`` or ``test_soar_api_auth.py``.
+
+    The shell that runs pytest may have ZAQORIN_API_KEY set (e.g. a
+    security audit), so we clear it here to keep the test default
+    behavior unchanged from before F6 / v1.7.6.
+    """
+    import os
+
     from zaqorincore_server.main import create_app  # noqa: PLC0415
 
+    os.environ.pop("ZAQORIN_API_KEY", None)
+    reset_settings()
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

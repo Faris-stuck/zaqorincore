@@ -39,6 +39,7 @@ import hashlib
 import hmac
 import base64
 import json
+import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -140,7 +141,32 @@ class EvidenceStore:
         return new_id
 
     def _alert_dir(self, alert_id: str) -> Path:
-        return self.base_dir / alert_id
+        # SECURITY (F4): Validate alert_id is a single relative path
+        # component — no separators, no traversal, no NUL bytes. We
+        # deliberately reject anything that would let the operator-side
+        # caller escape `base_dir` (e.g. "../etc/passwd"). The id is
+        # operator-supplied, so we must defend against typos and abuse
+        # the same way we'd defend against an attacker.
+        if not alert_id:
+            raise ValueError("alert_id must be non-empty")
+        if "\x00" in alert_id:
+            raise ValueError("alert_id must not contain NUL bytes")
+        if alert_id in {".", ".."}:
+            raise ValueError("alert_id must not be '.' or '..'")
+        if "/" in alert_id or "\\" in alert_id:
+            raise ValueError("alert_id must not contain path separators")
+        if Path(alert_id).is_absolute():
+            raise ValueError("alert_id must be relative")
+        if alert_id.startswith("."):
+            raise ValueError("alert_id must not start with '.'")
+        # Re-resolve to make sure the joined path stays under base_dir.
+        # Defence in depth: even if a check above is missed, this
+        # guarantees the final path does not escape via symlinks or
+        # any sneaky encoding left in the input.
+        joined = (self.base_dir / alert_id).resolve()
+        if not str(joined).startswith(str(self.base_dir.resolve()) + "/"):
+            raise ValueError("alert_id escapes base_dir")
+        return joined
 
     def submit(self, payload: EvidenceSubmit) -> EvidenceRecord:
         """Persist a tarball + sidecar. Returns the record.
@@ -177,7 +203,17 @@ class EvidenceStore:
         sig = hmac.new(key, sidecar_bytes, hashlib.sha256).hexdigest()
         sidecar_path = out_dir / "bundle.coc.json"
         sidecar_path.write_bytes(sidecar_bytes)
-        (out_dir / "bundle.coc.sig").write_text(sig)
+        sig_path = out_dir / "bundle.coc.sig"
+        sig_path.write_text(sig)
+        # SECURITY (F4): chain-of-custody files must be owner-only.
+        # 0o644 (the umask default) lets any local user read or
+        # tamper with evidence that's supposed to be tamper-evident.
+        os.chmod(bundle_path, 0o600)
+        os.chmod(sidecar_path, 0o600)
+        os.chmod(sig_path, 0o600)
+        # Lock the directory itself down so unprivileged users
+        # cannot list or stat its contents.
+        os.chmod(out_dir, 0o700)
         return EvidenceRecord(
             alert_id=payload.alert_id,
             host_id=payload.host_id,

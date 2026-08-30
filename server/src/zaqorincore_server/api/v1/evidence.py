@@ -12,13 +12,18 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ...evidence import EvidenceStore, EvidenceSubmit
+from ...security import require_api_key
 
 
-router = APIRouter(prefix="/api/v1/evidence", tags=["evidence"])
+router = APIRouter(
+    prefix="/api/v1/evidence",
+    tags=["evidence"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 # Disk-backed store. The base dir is configurable via env so
@@ -27,13 +32,40 @@ _BASE_DIR = Path(os.environ.get(
     "ZAQORIN_EVIDENCE_DIR",
     "/var/lib/zaqorincore/evidence",
 ))
-# The signing key comes from env. Phase 7 ships a placeholder
-# so the endpoint works in dev. Operators must set
-# ZAQORIN_EVIDENCE_KEY to a real 32-byte secret in production.
-_SIGNING_KEY = os.environ.get(
-    "ZAQORIN_EVIDENCE_KEY",
-    "zaqorincore-dev-evidence-key-change-me",
-).encode("utf-8")
+# The signing key comes from env. SECURITY (F5): in production the
+# placeholder below is REJECTED at import time so an operator cannot
+# accidentally run with the well-known dev key. In dev (ZAQORIN_ENV=dev
+# or absence of ZAQORIN_EVIDENCE_KEY together with --allow-dev-keys
+# flag passed via PYTHONHINTS — out of scope here), the placeholder is
+# used and a loud warning is logged. We do this at import time so a
+# misconfigured prod deploy fails to start rather than silently signing
+# evidence with a public key.
+_PROD_PLACEHOLDER = "zaqorincore-dev-evidence-key-change-me"
+_env_key = os.environ.get("ZAQORIN_EVIDENCE_KEY", "")
+_is_dev = os.environ.get("ZAQORIN_ENV", "production") != "production"
+if not _env_key:
+    if _is_dev:
+        import warnings as _w
+        _w.warn(
+            "ZAQORIN_EVIDENCE_KEY not set; using insecure placeholder. "
+            "Set ZAQORIN_EVIDENCE_KEY to a 32+ byte secret in production.",
+            stacklevel=2,
+        )
+        _env_key = _PROD_PLACEHOLDER
+    else:
+        raise RuntimeError(
+            "ZAQORIN_EVIDENCE_KEY must be set to a 32+ byte secret. "
+            "Refusing to start with the well-known dev placeholder in "
+            "production. Generate one with: python -c 'import secrets; "
+            "print(secrets.token_urlsafe(32))'"
+        )
+elif _env_key == _PROD_PLACEHOLDER and not _is_dev:
+    raise RuntimeError(
+        "ZAQORIN_EVIDENCE_KEY is set to the well-known dev placeholder. "
+        "Refusing to start in production. Generate a real secret with: "
+        "python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+    )
+_SIGNING_KEY = _env_key.encode("utf-8")
 _STORE = EvidenceStore(base_dir=_BASE_DIR, signing_key=_SIGNING_KEY)
 
 

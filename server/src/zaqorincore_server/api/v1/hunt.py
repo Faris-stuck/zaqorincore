@@ -37,10 +37,15 @@ from ...rule_engine.sigma import (
     load_rules_from_dir,
     parse_rule_file,
 )
+from ...security import require_api_key
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/hunt", tags=["hunt"])
+router = APIRouter(
+    prefix="/api/v1/hunt",
+    tags=["hunt"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 class HuntRunRequest(BaseModel):
@@ -137,7 +142,10 @@ async def run_hunt(
     # Single-event rule: matches() does the work.
     from ...detectors.base import ParsedEvent
     for row in rows:
-        meta = dict(row.metadata or {})
+        # NB: SQLAlchemy exposes the JSONB column via attribute name `metadata_`
+        # (column name is `metadata`, but that name is shadowed by the
+        # declarative `MetaData` class on the base model — see models/event.py).
+        meta = dict(row.metadata_ or {})
         meta.setdefault("source_ip", "")
         meta.setdefault("user", "")
         meta.setdefault("url", "")

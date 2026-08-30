@@ -9,9 +9,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db import get_session
+from ...security import require_api_key
 from ...service import event_service
 
-router = APIRouter(prefix="/api/v1/events", tags=["events"])
+router = APIRouter(
+    prefix="/api/v1/events",
+    tags=["events"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 @router.get("")
