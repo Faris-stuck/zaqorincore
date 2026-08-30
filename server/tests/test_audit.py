@@ -127,3 +127,64 @@ async def test_audit_since_filter_drops_old(app_client: AsyncClient) -> None:
     r = await app_client.get(f"/api/v1/audit?since={past}")
     assert r.status_code == 200
     assert r.json()["count"] == 1
+
+
+async def test_audit_action_filter(app_client: AsyncClient) -> None:
+    """``?action=<substr>`` narrows to matching action entries.
+
+    Cycle 19 added the ``action`` query param but no test for it;
+    cycle 21 closes that gap.
+    """
+    audit.record(actor="write", action="POST canary", target="c1")
+    audit.record(actor="read", action="GET events", target="-")
+    audit.record(actor="write", action="DELETE canary", target="c2")
+
+    r = await app_client.get("/api/v1/audit?action=canary")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 2
+    actions = {it["action"] for it in body["items"]}
+    assert actions == {"POST canary", "DELETE canary"}
+
+
+async def test_audit_action_and_actor_combined(app_client: AsyncClient) -> None:
+    """``?actor=X&action=Y`` AND-combines the two substring filters."""
+    audit.record(actor="write", action="POST canary", target="c1")
+    audit.record(actor="write", action="GET events", target="-")
+    audit.record(actor="read", action="POST canary", target="c2")
+
+    r = await app_client.get("/api/v1/audit?actor=write&action=canary")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 1
+    assert body["items"][0]["actor"] == "write"
+    assert body["items"][0]["action"] == "POST canary"
+
+
+async def test_audit_invalid_since_rejected(app_client: AsyncClient) -> None:
+    """Garbage ``?since=`` value returns 422 (not 500).
+
+    FastAPI / Pydantic validates the ``datetime`` query param at
+    the boundary; malformed ISO-8601 inputs are rejected with
+    422 *before* the handler runs. This test pins that contract
+    so a future refactor that loosens parsing (e.g. swallowing
+    bad timestamps inside the handler) gets caught.
+    """
+    audit.record(actor="write", action="noop", target="-")
+
+    r = await app_client.get("/api/v1/audit?since=not-a-timestamp")
+    # 422 = Unprocessable Entity; never 500 (crash).
+    assert r.status_code == 422
+
+
+async def test_audit_limit_bounds_enforced(app_client: AsyncClient) -> None:
+    """``limit`` outside ``[1, 1000]`` is rejected by FastAPI.
+
+    The Query declares ``ge=1, le=1000``; this test pins the
+    contract so future refactors don't silently widen it.
+    """
+    r = await app_client.get("/api/v1/audit?limit=0")
+    assert r.status_code == 422
+
+    r = await app_client.get("/api/v1/audit?limit=1001")
+    assert r.status_code == 422
