@@ -19,6 +19,7 @@ from . import (
     ingest_webhook,
     security,
     stream,
+    version,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "healthcheck",
     "agents",
     "security",
+    "version",
 ]
