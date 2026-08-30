@@ -262,6 +262,17 @@ func extractQuoted(s *string) string {
 // Lines that don't match either form return (section="", ok=false)
 // and are silently ignored.
 //
+// Resource bounds: The tailer (nxadm/tail → bufio.Scanner) enforces a
+// 64KB default line cap upstream. This parser is O(n) on line length
+// using IndexByte and SplitN (no quadratic blowup) and adds its own
+// 1MB safety cap so a misconfigured tailer or future in-process caller
+// cannot exhaust memory with a pathological 1GB line. Lines above the
+// cap return ok=false silently — same as malformed input.
+const modSecMaxLineBytes = 1 << 20 // 1 MiB
+
+// Lines that don't match either form return (section="", ok=false)
+// and are silently ignored.
+//
 // Example audit log excerpt:
 //
 //	--5d7c1e2a-A--
@@ -276,6 +287,12 @@ func extractQuoted(s *string) string {
 //	...
 //	--5d7c1e2a-Z--
 func ParseModSecLine(line string) (section string, fields map[string]string, endTxn bool, ok bool) {
+	// Defense-in-depth line cap. The tailer (bufio.Scanner) already
+	// caps at 64KB by default; this guard protects against future
+	// in-process callers or a tailer misconfiguration.
+	if len(line) > modSecMaxLineBytes {
+		return "", nil, false, false
+	}
 	line = strings.TrimRight(line, "\r\n")
 	if len(line) == 0 {
 		return "", nil, false, false

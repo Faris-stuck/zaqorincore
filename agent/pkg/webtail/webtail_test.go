@@ -271,3 +271,37 @@ func TestFormatNginxExample(t *testing.T) {
 		t.Errorf("example method: got %q", got[KeyMethod])
 	}
 }
+
+// TestParseModSecLine_LineCap verifies the 1MB defense-in-depth
+// guard. A line that exceeds the cap must be silently dropped
+// (ok=false) — the same way malformed input is handled. This
+// protects against a future in-process caller or a tailer
+// misconfiguration from feeding the parser a multi-GB string.
+func TestParseModSecLine_LineCap(t *testing.T) {
+	// 2 MiB string — well over the 1 MiB cap.
+	big := strings.Repeat("X", 2<<20)
+	section, fields, endTxn, ok := ParseModSecLine(big)
+	if ok {
+		t.Errorf("expected ok=false for oversize line, got ok=true (section=%q fields=%v endTxn=%v)",
+			section, fields, endTxn)
+	}
+	if section != "" || fields != nil || endTxn {
+		t.Errorf("expected zero values on rejection, got section=%q fields=%v endTxn=%v",
+			section, fields, endTxn)
+	}
+}
+
+// TestParseModSecLine_LineCapBoundary verifies a line at exactly
+// the cap (1 MiB) is accepted (not rejected). Tests the boundary
+// correctly: cap is inclusive.
+func TestParseModSecLine_LineCapBoundary(t *testing.T) {
+	// Exactly 1 MiB of valid section marker.
+	line := "--A--" + strings.Repeat("X", modSecMaxLineBytes-5)
+	if len(line) != modSecMaxLineBytes {
+		t.Fatalf("test fixture wrong length: %d", len(line))
+	}
+	_, _, _, ok := ParseModSecLine(line)
+	if !ok {
+		t.Errorf("expected ok=true at cap boundary, got ok=false")
+	}
+}

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zaqorincore-server"
-version = "1.7.4"
+version = "1.7.7"
 description = "ZaqorinCore central server — FastAPI app that accepts agent WebSocket streams, persists events to PostgreSQL, fans out through Redis Streams, runs Sigma-compatible detection, and emits SOAR actions."
 readme = "README.md"
 license = { text = "MIT" }
