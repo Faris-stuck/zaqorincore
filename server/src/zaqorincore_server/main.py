@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import health, v1
 from .api.v1 import (
     alerts,
+    audit as audit_api,
     auth as auth_api,
     canary,
     evidence,
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest_cloudflare.router)
     app.include_router(ingest_webhook.router)
     app.include_router(auth_api.router)
+    app.include_router(audit_api.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
     # root; if the directory is missing (e.g. server-only deployment), the

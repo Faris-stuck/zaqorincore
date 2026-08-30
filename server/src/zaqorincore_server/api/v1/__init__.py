@@ -6,6 +6,7 @@ exported so main.py can `from .api import v1` and mount them all.
 
 from . import (
     alerts,
+    audit,
     auth,
     canary,
     evidence,
@@ -28,4 +29,5 @@ __all__ = [
     "ingest_cloudflare",
     "ingest_webhook",
     "auth",
+    "audit",
 ]
