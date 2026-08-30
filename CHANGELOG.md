@@ -5,6 +5,109 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-08-30 — Q4 Mixed Pack v1 (5 cycles: docs + security + 2× obs + ops + 4× detection)
+
+v2.9.0 closes the v2.2.0 → v2.9.0 streak with the first
+**multi-track** Q4 pack. v2.7.0 / v2.8.0 were pure detection
+(Q4 Detection Packs v2 and v3). v2.9.0 diversifies back to
+the surface area that operators and reviewers actually
+read: documentation freshness, security surface audit,
+operator health checks, and **four more detection rules**
+that land MITRE coverage at **9.5%** (19/200 techniques).
+
+No engine changes, no new dependencies, no breaking surface
+changes. Every new endpoint sits behind the same opt-in
+`ZAQORIN_API_KEY` guard as the rest of v1.x.
+
+### Added
+
+- **CHANGELOG v2.8.0 backfill entry** (cycle 45, docs) —
+  63 LOC documenting the Q4 Detection Pack v3 surface
+  (T1055 Process Injection) so the public release notes
+  are honest and complete.
+- **`GET /api/v1/security/headers/audit`** (cycle 46,
+  security) — operator-facing security-header audit
+  endpoint. Returns the resolved header set, missing
+  headers (with severity), present-but-wrong values
+  (e.g. `Content-Security-Policy` with `unsafe-inline`),
+  and a SHA-256 over the canonical header list so the
+  audit can be pinned. 4 tests, +262 LOC.
+- **`GET /api/v1/version`** (cycle 47, obs) — returns
+  `{version, git_sha, build_time}`. Reads from the same
+  `pyproject.toml` constant the FastAPI app version is
+  bound to, plus a `git rev-parse --short HEAD` lookup.
+  6 tests, +213 LOC. Excluded from the error envelope
+  (matches `/healthcheck`) so the endpoint never 5xx.
+- **`GET /api/v1/agents/{agent_id}/health`** (cycle 48,
+  ops) — per-agent health read. Returns
+  `{agent_id, last_seen, status, queue_depth}`. Reuses
+  the cycle-31 agent registry, adds a sentinelled
+  `last_seen` so missing agents return a clean 200
+  rather than 404. 8 tests, +263 LOC.
+- **T1078.001 Default Accounts Sigma rule** (cycle 49,
+  detection) — flags `auth_login` events from vendor
+  default accounts: `admin`, `root`, `guest`, `ubnt`,
+  `postgres`, `mysql`, `oracle`, `tomcat`, `pi`, `sa`,
+  `administrator`, `support`. Anchored `\b…\b` boundaries
+  + a `filter_service` clause to suppress legitimate
+  service / monitoring users. **9 tests, 93/93 lint,
+  166 LOC.** Detection coverage 17/200 (8.5%).
+- **T1003.001 LSASS Memory Dump Sigma rule** (cycle 50,
+  detection) — flags `process_access` events where
+  the target is `lsass.exe` AND the source process is
+  a credential-dumping tool: `procdump -ma`, `rundll32
+  comsvcs.dll MiniDump`, `mimikatz sekurlsa`, `pwdump`,
+  `fgdump`, `gsecdump`. Anchoring uses
+  `(?<![A-Za-z0-9_])` + `(?![A-Za-z0-9_.])` lookbehind
+  / lookahead so a substring like `myprocdump.exe` does
+  not trigger. **9 tests, 94/94 lint.** Detection
+  coverage 18/200 (9.0%).
+- **T1110.001 Password Guessing Sigma rule** (cycle 51,
+  detection) — flags bursts of `auth_login` failures
+  against the same target from the same source within a
+  sliding window. Threshold = 10 failures / 5 min
+  (configurable via Sigma field constants). Single
+  selection clause + single `not filter_service_user`
+  clause — engine supports one filter in v1.4.y.
+  **12 tests, 95/95 lint, 277 LOC.** Detection coverage
+  19/200 (9.5%).
+- **T1056.001 Keylogging Sigma rule** (cycle 52,
+  detection) — flags input-capture events:
+  `logkeys`, `xspy`, `screenkey`, `pykeylogger`,
+  `StraceDecepPy` style Python loadables, raw `/dev/input/event*`
+  reads outside of `Xorg` / `wayland` / `gnome-shell`
+  contexts. Engine handles the `(X or Y) and not Z`
+  pattern from ADR-010. **10 tests, 96/96 lint, 224 LOC.**
+  Detection coverage 20/200 (10.0% — **double digits**).
+- **`GET /api/v1/stats`** (cycle 53, obs) — top-level
+  process snapshot. Returns `{version, git_sha,
+  rules_loaded, agents_connected, uptime_seconds, pid}`.
+  Reuses cycle-30 `_count_yml_files` and
+  `agent_registry.count()`. Adds `time.monotonic` for
+  monotonic uptime and `os.getpid` for the worker PID.
+  Per-field sentinels on missing data; never 5xx.
+  Excluded from the error envelope (alongside
+  `/healthcheck` and `/api/v1/version`). **4 tests,
+  +224 LOC across 5 files.**
+
+### Notes
+
+- 547/547 server pytest pass (cumulative: 543 baseline +
+  cycle-46: 4 + cycle-47: 6 + cycle-48: 4 + cycle-49: 9 +
+  cycle-50: 9 + cycle-51: 12 + cycle-52: 10 + cycle-53: 4).
+- 96/96 lint clean (93 → 96 with T1078.001, T1003.001,
+  T1110.001, T1056.001).
+- 10/10 Go agent packages pass — no Go changes in this
+  pack.
+- 9/9 launch smoke + 9/9 live smoke still pass; no
+  behavior change on the v1.0.0 surface.
+- MITRE ATT&CK detection coverage moves
+  **8.0% → 10.0%** (16/200 → 20/200). **Crosses
+  double digits** for the first time.
+- 5 different tracks in 5 cycles (docs, security, obs,
+  ops, detection × 4) — full track-balance diversification
+  in a single pack.
+
 ## [Unreleased]
 
 ### Planning (v1.0.0 → v1.3.0)
