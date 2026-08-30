@@ -1,0 +1,36 @@
+title: Indicator removal — log clearing via truncate, redirection, and logrotate force
+id: aae5d49e-37a2-4c18-a597-f8c5edcc1ed2
+description: |
+  Detects log clearing and tampering activity (MITRE T1070.001 —
+  Clear Windows Event Logs / Clear Network Connection History and
+  Logs, but applies here to the Unix/Linux analog). Covers direct
+  truncation of log files (`truncate -s 0`, `:>`, `> /var/log/*`,
+  `echo > /var/log/*`), redirection to /dev/null (`/var/log/* > /dev/null`,
+  `ln -sf /dev/null`), and forced logrotate runs that recycle
+  logs to hide recent activity (`logrotate -f`, `logrotate --force`).
+  These are classic post-exploitation anti-forensics steps on
+  Linux/Unix hosts and routinely precede secondary actions like
+  lateral movement or data exfiltration. Package-manager activity
+  is excluded to suppress noise.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1070/
+  - https://attack.mitre.org/techniques/T1070/001/
+tags:
+  - attack.t1070
+  - attack.defense_evasion
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(\btruncate\s+(-[A-Za-z]*s\s*\d+|--size\s*\d+)\s+|>\s*/var/log/\S+|:\s*>\s*/var/log/\S+|\becho\s+["\047]?\s*>?\s*/var/log/\S+|\btee\s+/var/log/\S+|\bln\s+-[A-Za-z]*s[fF]\s+/dev/null\s+/var/log/|\blogrotate\s+(-[A-Za-z]*f\b|--force\b))'
+  filter_pkg_manager:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman)\b'
+  condition: selection and not filter_pkg_manager
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
