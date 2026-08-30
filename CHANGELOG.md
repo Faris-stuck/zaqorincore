@@ -151,6 +151,66 @@ the runtime code lands in the next three feature releases.
   section in the project's Obsidian vault note
   `Proyek - Cyber Sentinel ZaqorinCore.md`.
 
+## [2.2.0] - 2026-08-30 — Q3 Detection + Ops Pack
+
+First quarterly pack that batches multi-track small cycles
+into one substantive release. v2.0.0 → v2.1.x laid the
+foundation; v2.2.0 ships the detection coverage and the
+ops surface on top of it.
+
+### Added
+
+- **Q3 Detection Pack** — 5 production Sigma rules under
+  `server/rules/builtin/mitre_attack/`, each with its own
+  test file:
+
+  | Rule | ATT&CK | Description |
+  |---|---|---|
+  | T1059.004 | T1059.004 | Unix-shell one-liner (curl|sh, wget piped, base64 -d) |
+  | T1053.003  | T1053.003  | Cron persistence (crontab, /etc/cron.* writes) |
+  | T1070.004  | T1070.004  | Indicator removal (rm -rf, shred, wipe, find -delete on sensitive paths) |
+  | T1548.001  | T1548.001  | Setuid/Setgid abuse |
+  | T1053.005  | T1053.005  | Scheduled Task via `at` command |
+
+  ~810 LOC rules + tests. Engine support covers `startswith`,
+  `endswith`, `ge`, `lt` modifiers (v2.1.x) and 4 compound
+  condition patterns (v2.1.x). See [docs/PHASE14](docs/PHASE14-sigma-modifiers.md)
+  and [docs/PHASE15](docs/PHASE15-sigma-compound-conditions.md).
+
+- **`/healthz/deps` endpoint** (v2.1.x) — per-dependency
+  structured health for ops dashboards. Returns latency, pool
+  size, backlog, migrations head per dep. Prometheus / Alertmanager
+  / cron curl target. See [docs/OPERATIONS.md §8.1](docs/OPERATIONS.md).
+
+### Changed
+
+- **OPERATIONS.md** — section 8 documents the Q3 Detection Pack
+  and the per-dep health probe with a copy-pasteable curl/jq
+  example and a Prometheus Alertmanager wiring sketch.
+
+## [2.1.6] - 2026-08-30 — Rate-limit probe-bypass integration test
+
+- Pins the `/healthz/deps` probe-path bypass inside the
+  rate-limit middleware. `tests/test_rate_limit.py` covers
+  the bypass matrix (4xx allow, healthz allow, normal path
+  throttled). +61 LOC.
+
+## [2.1.0] - 2026-08-30 — IMP-1 role-based API auth (security)
+
+- **X-API-Key header auth** with three roles: `read`, `write`,
+  `ingest`. Applied to all `/soar/*` and CDN ingest endpoints.
+  Public health probes (`/healthz`, `/healthz/deps`) intentionally
+  unauthenticated. +546 LOC middleware + tests. See
+  [docs/OPERATIONS.md §6](docs/OPERATIONS.md).
+
+## [2.0.0] - 2026-08-30 — Horizon 2: CDN adapter
+
+- Generic webhook ingest with 4 vendor translators
+  (Cloudflare, Fastly, Akamai, CloudFront) — Horizon 2 Slice B.
+- Cloudflare Logpush ingest + 6 CDN Sigma rules —
+  Horizon 2 Slices A + C. ~600 LOC.
+- ADR-014 — CDN adapter design rationale.
+
 ## [1.4.0] - 2026-08-29
 
 The Windows detection-rules layer ships in this release.
