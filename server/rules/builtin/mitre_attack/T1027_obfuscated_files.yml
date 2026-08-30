@@ -1,0 +1,36 @@
+title: Obfuscated files or information via base64 eval, rev shell, or char-array decode
+id: 8f3d2a17-6b4e-4c81-9d2f-1a7e3c5b8d09
+description: |
+  Detects Linux processes that decode and execute obfuscated payloads
+  commonly used to evade static analysis: `base64 -d` piped into an
+  interpreter, `echo <blob> | base64 --decode | bash`, `printf <hex>` decoded
+  via `xxd -r`, `eval` against a constructed string, `python -c` with
+  obfuscated `exec`/`compile`/`base64` calls, and shell `rev`/`tr`-based
+  string reversal followed by execution. These are classic MITRE
+  T1027 (Obfuscated Files or Information) patterns. Legitimate developer
+  tooling (git hooks, package-manager post-install hooks, vim/micro plugin
+  installs) is excluded to suppress false positives.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1027/
+  - https://attack.mitre.org/techniques/T1027/010/
+  - https://attack.mitre.org/techniques/T1027/013/
+tags:
+  - attack.t1027
+  - attack.defense_evasion
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(bash|sh|dash|zsh|ksh|python|python3|perl|ruby|php|node|awk)\b'
+    command: 're:(?i)(\bbase64\s+(-d|--decode)\b|\|\s*base64\s+(-d|--decode)\b|\beval\s+[\x27\x22]?\$\(|\beval\s+[\x27\x22][A-Za-z0-9+/=]{20,}|\bxxd\s+-r\s*\|\s*(bash|sh|dash|zsh|ksh)\b|\bprintf\s+[\x27\x22][0-9a-fx\\\%]{16,}\s*\|\s*xxd\b|\bexec\s*\(\s*(base64|marshal|compile|zlib)\b|\bcompile\s*\(\s*[\x27\x22][A-Za-z0-9+/=]{20,}\s*,\s*[\x27\x22][A-Za-z0-9+/=]{20,}\s*,\s*[\x27\x22]exec[\x27\x22]\s*\)|\btr\s+[\x27\x22][A-Za-z][A-Za-z][\x27\x22]\s+[\x27\x22][A-Za-z][A-Za-z][\x27\x22]\s*<\s*[A-Za-z0-9_.\-/]+\s*\|\s*(bash|sh|dash|zsh|ksh)\b)'
+  filter_legit:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman|snap|flatpak|brew|pip|pip3|npm|yarn|cargo|gem|go|git|ssh-keygen|gpg|vim|nvim|micro|nano|emacs)\b'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
