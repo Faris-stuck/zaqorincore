@@ -1,0 +1,38 @@
+title: LSASS memory dump via procdump, comsvcs.dll, or mimikatz (T1003.001)
+id: a3b8e2d1-6f47-4c89-9b12-7e4d5a8c1f90
+description: |
+  Flags process-access events that look like an LSASS memory dump. The
+  classic T1003.001 signals are procdump pointed at lsass.exe (often
+  with -ma or -mm flags), MiniDump calls into comsvcs.dll via
+  rundll32 (the LOLBIN "rundll32 comsvcs.dll MiniDump <pid> lsass.dmp
+  full"), and direct mimikatz sekurlsa::logonpasswords / sekurlsa::dumplsa
+  invocations. Successful execution of any of these gives the operator
+  plaintext NTLM hashes, Kerberos tickets, and DPAPI master keys.
+
+  Legitimate debug collectors and signed AV processes that genuinely
+  inspect lsass.exe (filter_lab) are excluded to keep the rule useful
+  in production where Sysinternals and EDR run constantly.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+  - https://learn.microsoft.com/en-us/sysinternals/downloads/procdump
+  - https://attack.mitre.org/software/S0002/
+tags:
+  - attack.t1003.001
+  - attack.credential_access
+  - nist_csf.DE.CM
+level: critical
+detection:
+  selection:
+    event_type: "process_access"
+    target_file: 're:(?i)(?<![A-Za-z0-9_.])lsass\.exe(?![A-Za-z0-9_.])'
+    command: 're:(?i)(?<![A-Za-z0-9_.])(procdump|rundll32|comsvcs\.dll|mimikatz|sekurlsa|pwdump|fgdump|gsecdump)\.?(?![A-Za-z0-9_])'
+  filter_lab:
+    command: 're:(?i)(trendmicro|symantec\.dmp|debug\.dmp)'
+  condition: selection and not filter_lab
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{source_ip}}"
