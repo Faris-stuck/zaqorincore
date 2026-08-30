@@ -19,6 +19,11 @@ last_version, hostname). Response shape::
         "count": <int>
     }
 
+Cycle 48 also adds ``GET /api/v1/agents/{agent_id}/health``
+which returns a per-agent heartbeat view
+(``status`` ∈ ``online``/``stale``/``offline``). See the
+endpoint docstring below for status semantics.
+
 Design notes
 ============
 
@@ -34,22 +39,24 @@ Design notes
   connectivity view during a partial DB degradation.
 * ``last_seen_at`` and ``hostname`` come from the Host row
   populated by ``upsert_on_hello``; they reflect the most
-  recent HELLO frame the agent sent, not the lifetime of
-  the current WebSocket. The cycle-30 ``count()`` accessor
-  is what tells you the live count; this endpoint tells you
+  recent HELLO frame the agent sent, not the lifetime of the
+  current WebSocket. The cycle-30 ``count()`` accessor is
+  what tells you the live count; this endpoint tells you
   *who* is connected and what version they're running.
-* Excluded from the cycle-28 error envelope contract (see
-  ``_EXCLUDED_PREFIXES`` in ``error_envelope.py``) so the
-  body shape stays stable for scrape tools, same reasoning
-  as ``/api/v1/healthcheck`` and the ``/healthz`` family.
+* The per-agent ``/health`` endpoint (cycle 48) does raise a
+  404 (via the standard cycle-28 envelope) for unknown
+  agent_ids — operators mistyping a UUID want a clear error,
+  not a silent empty body. The 200 path never raises 5xx
+  for the same reasons as the list endpoint.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db import get_session
@@ -64,6 +71,12 @@ router = APIRouter(
     prefix="/api/v1",
     dependencies=[Depends(require_api_key)],
 )
+
+# Cycle 48: an agent is considered "stale" if its last_seen_at is
+# older than this threshold. We deliberately pick a window longer
+# than the typical HELLO interval (the dispatcher targets ~30s)
+# so a transient delay does not flip the status.
+_STALE_AFTER_SECONDS = 300
 
 
 @router.get("/agents")
@@ -118,6 +131,87 @@ async def list_agents(session: AsyncSession = Depends(get_session)) -> dict:
         )
 
     return {"agents": agents, "count": len(agents)}
+
+
+@router.get("/agents/{agent_id}/health")
+async def get_agent_health(
+    agent_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Surface a single agent's heartbeat state.
+
+    Returns a per-agent view that is cheaper to scrape than the
+    full list endpoint, with explicit ``status`` semantics so an
+    operator (or a Prometheus textfile exporter) can branch on a
+    single field rather than computing it client-side. Response::
+
+        {
+            "host_id": "<uuid>",
+            "connected": <bool>,        # live WebSocket on this worker
+            "status": "online"|"stale"|"offline",
+            "last_seen_at": "<iso8601>|null",
+            "last_version": "<str>|null",
+            "hostname": "<str>|null",
+            "age_seconds": <int|null>    # now - last_seen_at, null if never
+        }
+
+    Status semantics (cycle 48):
+        * ``online``  — WebSocket is currently registered AND the
+          Host row's ``last_seen_at`` is within
+          ``_STALE_AFTER_SECONDS``.
+        * ``stale``   — WebSocket is registered but the Host row
+          has not been refreshed in
+          ``_STALE_AFTER_SECONDS`` (typical: agent process is
+          wedged but the TCP socket has not yet been torn down).
+        * ``offline`` — no WebSocket on this worker, regardless of
+          what the Host row says.
+
+    We return 404 only when there is no Host row for the UUID —
+    unknown IDs are a different problem from "known but
+    disconnected". An unknown UUID on a real deployment usually
+    means the operator mistyped or hit an old link.
+    """
+    from sqlalchemy import select as sa_select  # local import keeps top tidy
+
+    stmt = sa_select(Host).where(Host.id == agent_id)
+    result = await session.execute(stmt)
+    host = result.scalar_one_or_none()
+
+    if host is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown agent_id: {agent_id}",
+        )
+
+    connected = agent_registry.get(agent_id) is not None
+    last_seen_at = host.last_seen_at
+    age_seconds: int | None = None
+    if last_seen_at is not None:
+        # ``last_seen_at`` is stored as tz-aware UTC. Compare
+        # against the same anchor; if the DB ever returns a naive
+        # timestamp we still treat it as UTC rather than raising.
+        now = datetime.now(timezone.utc)
+        ref = last_seen_at if last_seen_at.tzinfo else last_seen_at.replace(
+            tzinfo=timezone.utc
+        )
+        age_seconds = max(0, int((now - ref).total_seconds()))
+
+    if not connected:
+        agent_status = "offline"
+    elif age_seconds is not None and age_seconds > _STALE_AFTER_SECONDS:
+        agent_status = "stale"
+    else:
+        agent_status = "online"
+
+    return {
+        "host_id": str(host.id),
+        "connected": connected,
+        "status": agent_status,
+        "last_seen_at": last_seen_at.isoformat() if last_seen_at else None,
+        "last_version": host.last_version,
+        "hostname": host.hostname,
+        "age_seconds": age_seconds,
+    }
 
 
 __all__ = ["router"]
