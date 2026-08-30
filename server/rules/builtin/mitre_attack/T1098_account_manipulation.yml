@@ -1,0 +1,62 @@
+title: Account manipulation — user/group mutation via shadow utilities
+id: 9d4f1a62-3b7e-4c2d-8e5a-1f6b9c3d2e47
+description: |
+  Detects account manipulation activity (MITRE T1098 — Account
+  Manipulation, sub-techniques .001 Additional Local or Domain
+  Accounts, .002 Additional Email Delegate Permissions, .003 Add
+  Account to Cloud Resource, and .004 SSH Authorized Keys).
+  This rule focuses on the Unix/Linux primitives that adversaries
+  use to add, remove, or modify local accounts and groups after
+  gaining a foothold:
+
+    - account creation/deletion: `useradd`, `userdel`, `groupadd`,
+      `groupdel`, `adduser`, `addgroup`, `deluser`, `delgroup`
+    - account modification: `usermod`, `groupmod`, `gpasswd`,
+      `passwd <user>` (changing another user's password)
+    - shell / GECOS mutation: `chsh`, `chfn`, `usermod -s`
+    - privilege escalation: `usermod -G wheel|sudo|root|admin`,
+      `gpasswd -a ... wheel|sudo|root|admin`
+
+  These are the canonical post-foothold persistence steps an
+  adversary runs to keep access after a compromise. Filtered out:
+  - `passwd` invoked with no argument (self-change, interactive
+    password update)
+  - package-manager invocations (`apt`, `dpkg`, `yum`, `dnf`,
+    `rpm`, `apk`, `pacman`) — these routinely create system
+    accounts during install/uninstall and would otherwise drown
+    the SOC in noise
+  - `adduser`/`addgroup` in `--system` mode — Debian/Ubuntu
+    package hooks use this for service accounts
+
+  Anchoring rules:
+  - utility names use `\b` boundaries so `usermod` is not matched
+    inside `usermodshim` or other process-name collisions
+  - target path `/etc/(passwd|shadow|group|gshadow)` uses `^`/`\s`
+    anchors to avoid matching `/etc/sshd_config`-style paths
+  - privilege-escalation group names use `\b` boundaries so
+    `wheel` inside `wheelchair` (very unlikely but defensive) does
+    not match
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1098/
+  - https://attack.mitre.org/techniques/T1098/001/
+  - https://attack.mitre.org/techniques/T1098/004/
+tags:
+  - attack.t1098
+  - attack.persistence
+  - attack.privilege_escalation
+  - nist_csf.PR.AC
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(\b(useradd|userdel|usermod|groupadd|groupdel|groupmod|gpasswd|chsh|chfn|adduser|addgroup|deluser|delgroup)\b\s+[^|;&]*|\bpasswd\b\s+(?!-)([A-Za-z0-9_.][A-Za-z0-9_.\-]*))'
+  filter_legit:
+    command: 're:(?i)(\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman)\b|--system\b|^\s*passwd\s*$)'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
