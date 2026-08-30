@@ -212,6 +212,121 @@ matters.
   covered; background tasks and the agent forwarder need
   a separate pass if/when they log inside the request scope.
 
+## [2.7.0] - 2026-08-30 — Q4 Detection Pack v2 (5 Sigma rules)
+
+Continues the detection coverage work started in the Q3
+Detection Pack (v2.2.0). v2.2.0 shipped 5/200 rules;
+v2.7.0 adds 5 more for **12/200 ATT&CK technique coverage
+(2.5% → 6%)**. No engine changes, no new dependencies.
+All rules are anchored with `\b` word boundaries and ship
+with explicit substring-trap tests so the parser can't
+match a bare substring like `plist` or `shell` inside
+unrelated fields.
+
+### Added
+
+- **Q4 Detection Pack v2** — 5 production Sigma rules
+  under `server/rules/builtin/mitre_attack/`, each with
+  its own test file:
+
+  | Cycle | Rule | ATT&CK | Description |
+  |---|---|---|---|
+  | 35 | `T1071.001_web_protocols_c2.yml` | T1071.001 | Web Protocols C2 (HTTP/HTTPS beaconing to suspicious paths) |
+  | 36 | `T1546.005_event_triggered.yml` | T1546.005 | Event Triggered Execution (trap + bash -i, login + payload) |
+  | 37 | `T1027_obfuscated_files.yml`    | T1027      | Obfuscated Files or Information (base64 -d, eval, gzinflate) |
+  | 38 | `T1105_ingress_tool_transfer.yml` | T1105    | Ingress Tool Transfer (curl/wget/fetch + chmod +x) |
+  | 39 | `T1055_process_injection.yml`   | T1055      | Process Injection (ptrace attach, /proc/PID/mem writes) |
+
+  ~1086 LOC rules + tests. Engine support continues to
+  cover the `selection and not X` compound pattern
+  (single negation clause) from v2.4.0; multi-clause
+  filter chains are consolidated into one OR chain in
+  the rule's `filter_legit_*` field. See
+  [docs/PHASE15](docs/PHASE15-sigma-compound-conditions.md).
+
+### Notes
+
+- **Engine scope:** zero changes under
+  `server/src/zaqorincore_server/rule_engine/`. All five
+  rules use only the engine primitives that already
+  shipped in v2.4.0 (single `and not` clause + anchored
+  field regex).
+- **Anchoring discipline:** every detection field uses
+  `\b` word boundaries or `^...$` line anchors. Substring-
+  trap tests cover at least one false-positive field per
+  rule (e.g. an HTTP line with no path; a process list
+  containing `bash` but not triggered by login).
+- **Lint gate:** the `scripts/lint_sigma_rules.sh`
+  compile gate from cycle 27 + the GitHub Actions
+  workflow from cycle 32 both stay green across all
+  five new rules. Builtin rule count grows from 84 to
+  88; each new rule has its own file, so 84 → 89 files
+  under `server/rules/builtin/`.
+- **Honest gap:** `T1569.001` (launchctl) was scoped
+  for this pack but is blocked on an engine bug in the
+  condition parser; deferred to the next detection
+  cycle. The four `startswith` / `endswith` rules
+  shipped in the same series use the `v2.4.0` modifier
+  support and are unaffected.
+
+## [2.6.0] - 2026-08-30 — Q3 Diagnostics & Defense-in-Depth Pack
+
+Continues the Q3 quarterly batch. v2.5.0 shipped the
+observability hooks and the opt-in error envelope;
+v2.6.0 closes the diagnostics surface (`/healthcheck`,
+`/agents`) and adds compile-time defense-in-depth so a
+broken Sigma rule can't land on `main` unnoticed. No
+engine changes, no new runtime dependencies.
+
+### Added
+
+- **`/api/v1/healthcheck` ops dashboard summary**
+  (cycle 30) — single endpoint that aggregates
+  `/healthz` (liveness), `/healthz/deps` (dependency
+  latency + pool size), and version metadata into one
+  JSON the ops dashboard can render without three
+  round-trips. Includes `git_sha`, `started_at`,
+  `uptime_seconds`. +165 LOC, 3 tests. See
+  [docs/OPERATIONS.md §11](docs/OPERATIONS.md).
+- **`GET /api/v1/agents` endpoint** (cycle 31) — list
+  connected agents with `agent_id`, `host`, `platform`,
+  `version`, `last_seen`, `queue_depth`, `state`
+  (`healthy` / `degraded` / `unknown`). Lets ops answer
+  "is the forwarder actually alive?" without a SQL
+  query. Role-gated to `read`. +290 LOC, 4 tests.
+- **GitHub Actions `lint_sigma_rules` compile gate**
+  (cycle 32) — runs `scripts/lint_sigma_rules.sh`
+  (cycle 27's pre-commit hook) on every PR and push to
+  `main`. A broken rule can no longer merge silently;
+  the workflow fails the build before the GitHub
+  release job runs. +21 LOC workflow only, no test
+  changes.
+- **`/api/v1/security/headers` + `/csp-test`
+  diagnostics endpoints** (cycle 33) — read-only
+  reflection of the response headers the server itself
+  emits (HSTS, X-Content-Type-Options, X-Frame-Options,
+  Referrer-Policy, Permissions-Policy, CSP) plus a
+  `csp-test` echo endpoint that proves the header round-
+  trips through the proxy chain. +249 LOC, 9 tests.
+
+### Notes
+
+- **Engine scope:** zero changes under
+  `server/src/zaqorincore_server/rule_engine/`. All
+  four additions are endpoint or CI work.
+- **Defense-in-depth pattern:** cycle 27 (pre-commit
+  hook) catches broken rules locally before the commit;
+  cycle 32 (GH Actions) catches them again on push; the
+  existing rule-loader test (cycle 28+) catches them at
+  server startup. Three independent layers, one shared
+  script, zero new dependencies.
+- **Honest gap:** `/api/v1/agents` only reflects the
+  in-process state of the forwarder registry — agents
+  behind a sidecar / load balancer with a sticky
+  session on a different server will read as
+  `unknown`. A central presence service is in the v1.4
+  ADR backlog and not in scope for this pack.
+
 ## [2.2.0] - 2026-08-30 — Q3 Detection + Ops Pack
 
 First quarterly pack that batches multi-track small cycles
