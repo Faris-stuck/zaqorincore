@@ -1,0 +1,50 @@
+title: Process injection via classic Win32 API or /proc/PID/mem writes
+id: 5d2f8a91-6b3e-4c7d-9a1f-2e4b8c3d6f01
+description: |
+  Detects process injection patterns via classic Windows-style API
+  names invoked from a Unix shell (gdb-attach + memory-write, shell
+  scripts containing VirtualAllocEx / WriteProcessMemory /
+  CreateRemoteThread / QueueUserAPC / SetWindowsHookEx), and direct
+  writes to another process's memory via /proc/<pid>/mem or ptrace.
+
+  These are the canonical T1055 family primitives: classic shellcode
+  injection (T1055.002), reflective PE loading via mmap (T1055.014),
+  and the Unix-equivalent write-to-/proc-mem path that adversaries
+  use to attach a debugger and overwrite live process memory.
+
+  Legitimate developer flows are excluded: gdb attaching to its own
+  child binary (no shell), strace on self, and dd writing to its own
+  fd. The rule only fires when the injection API appears inside a
+  shell command line — that is the operator-free pattern that
+  indicates either an exploit chain or a post-exploitation toolkit.
+
+  Anchoring rules:
+    - API names use `\b` boundaries (`VirtualAllocEx` is anchored,
+      `MyVirtualAllocEx` is NOT)
+    - `/proc/<pid>/mem` uses a numeric `pid` group so paths like
+      `/proc/self/mem` (debugger on itself) are explicitly filtered
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1055/
+  - https://attack.mitre.org/techniques/T1055/002/
+  - https://attack.mitre.org/techniques/T1055/012/
+  - https://attack.mitre.org/techniques/T1055/014/
+tags:
+  - attack.t1055
+  - attack.defense_evasion
+  - attack.privilege_escalation
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(\bVirtualAllocEx\b|\bWriteProcessMemory\b|\bCreateRemoteThread\b|\bQueueUserAPC\b|\bSetWindowsHookEx\b|\bNtMapViewOfSection\b|\bRtlCreateUserThread\b|\bdd\b[^|;&]*\s+of=/proc/[0-9]+/mem\b|\bgdb\b[^\n]*\s+-p\s+[0-9]+\b|\bptrace\b[^\n]*\bPTRACE_ATTACH\b)'
+  filter_dev_self:
+    command: 're:(?i)(/proc/self/mem|\bstrace\b\s+-p\s+1\s*$|\bgdb\b\s+--args\s+/(usr/)?bin/)'
+  condition: selection and not filter_dev_self
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
