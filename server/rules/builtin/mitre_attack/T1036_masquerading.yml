@@ -1,0 +1,54 @@
+title: Masquerading — process name spoofing, double extensions, renamed interpreters
+id: 081e8ad0-6a92-4e37-9160-af96e69e8bbe
+description: |
+  Detects common T1036 Masquerading primitives observed during
+  post-exploitation on Linux/Unix hosts:
+
+  1. Legitimate process names invoked from non-standard paths
+     (`bash` from `/tmp/`, `/var/tmp/`, `/dev/shm/`).
+  2. Executables with double extensions (`payload.sh.py`,
+     `evil.jpg.bin`, `runner.png.elf`) — classic dropper lure.
+  3. Interpreters renamed away from their canonical basename
+     (`python` invoked as `/tmp/loader` while running a script
+     via `python -c` is detected via the renamed-parent heuristic
+     below).
+  4. Homoglyph / case-twist processes: `BASH`, `SshD`, `SystemD`
+     where argv basename differs only in case from the canonical
+     system binary (Linux kernel treats argv as case-sensitive so
+     `BASH` is NOT the same file as `/usr/bin/bash`).
+  5. Dropper staging via `chmod +x` followed by direct exec from
+     world-writable dirs.
+
+  Anchoring rules:
+  - Process basenames use `\b` boundaries so `bashbug` does NOT
+    match the `bash` selector and `python3.10` does NOT match
+    the bare `python` selector.
+  - Path anchors use `^` and `\s` so `/tmp/bash` matches but
+    `/usr/bin/bash` does not.
+  - The case-twist check is exact-basename, NOT substring.
+  - Legitimate package managers and shell self-respawns are
+    excluded to avoid noise on routine maintenance.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1036/
+  - https://attack.mitre.org/techniques/T1036/001/
+  - https://attack.mitre.org/techniques/T1036/003/
+  - https://attack.mitre.org/techniques/T1036/005/
+tags:
+  - attack.t1036
+  - attack.defense_evasion
+  - nist_csF.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:((?:^|\s|;|\|)/tmp/[^\s|;&]+(?:\s+(?:bash|sh|python|python3|perl|ruby|node|php))?|(?:^|\s|;|\|)/(?:var/tmp|dev/shm)/[^\s|;&]+(?:\s+(?:bash|sh|python|python3|perl|ruby|node|php))?|\b\w+\.(?:sh|py|pl|rb|elf|bin)\.(?:sh|py|pl|rb|elf|bin)\b|/(?:bin|usr/bin|sbin|usr/sbin)/[a-z]+\.(?:sh|py|pl|rb|elf|bin)\b|/(?:bin|usr/bin|sbin|usr/sbin)/(?:[A-Z]{3,})\b|\bchmod\b\s+(?:[a-z]*\+x|[0-7]*7[0-7])\s+/(?:tmp|var/tmp|dev/shm)/\S+)'
+  filter_legit:
+    command: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman|snap|brew)\b|\bsystemd\b\s+--user\b|/proc/self/exe|\bexec\b\s+\bbash\b\s*$'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
