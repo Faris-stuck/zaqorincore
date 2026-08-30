@@ -1,0 +1,44 @@
+title: Ingress tool transfer via curl/wget/fetch writing to disk
+id: 9a8b2e47-3c1f-4d6e-8a5b-7f2d4e9c1a08
+description: |
+  Detects classic MITRE T1105 (Ingress Tool Transfer) patterns where
+  a Unix shell is used to download remote content and write it to the
+  local filesystem using `curl -o/-O`, `wget -O`, `fetch -o`, or
+  pipe-to-shell variants (`curl ... | bash`, `wget ... | sh`). These
+  are the textbook follow-on after a phishing click or web exploit:
+  pull a second-stage payload and drop it on disk, or run it
+  in-memory.
+
+  Legitimate developer/package-manager flows (`apt`, `pip`, `npm`,
+  `go install`, `git clone`, etc.) are excluded because they are the
+  primary noise source — package managers legitimately pull remote
+  content, but they do so via their own managed process tree and are
+  not the typical T1105 vehicle.
+
+  Anchoring rules:
+    - `\\bcurl\\b`, `\\bwget\\b`, `\\bfetch\\b`  use word boundaries
+    - `-O`, `-o`, `--output` use `\\s-` or `\\s--` to anchor to flags
+    - pipe-to-shell uses `\\|\\s*(ba)?sh\\b` so `bashpipe` does not match
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1105/
+tags:
+  - attack.t1105
+  - attack.command_and_control
+  - attack.execution
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(curl|wget|fetch)\b'
+    command: 're:(?i)(\s-o\s|\s-O\b|\s--output\s|\s--remote-time\s|\s--output-document\s|\|\s*(ba)?sh\b|\|\s*(ba)?sh\s|\bcurl\b.*\s-O\b|\bwget\b.*\s-O\b)'
+  filter_pkg_manager:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman|snap|flatpak|brew|pip|pip3|npm|yarn|cargo|gem|go|git)\b'
+  condition: selection and not filter_pkg_manager
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
