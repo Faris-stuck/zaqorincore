@@ -1,0 +1,34 @@
+title: Cron job persistence via crontab or /etc/cron.* writes
+id: 9b4c1d8e-3a7f-4e2b-8c5d-1f6a9e0b2c4d
+description: |
+  Detects writes to user crontabs (crontab -e, crontab <file>) and to
+  system cron directories (/etc/cron.d, /etc/cron.daily, /etc/cron.hourly,
+  /etc/cron.weekly, /etc/cron.monthly, /var/spool/cron/crontabs) by a
+  process other than a package manager or cron daemon. Cron is a top
+  post-exploitation persistence mechanism on Linux/Unix hosts and
+  legitimate cron edits from interactive shells are uncommon in
+  containerised / production environments.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1053/
+  - https://attack.mitre.org/techniques/T1053/003/
+tags:
+  - attack.t1053
+  - attack.persistence
+  - attack.privilege_escalation
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(crontab|tee|cp|mv|install|rsync|scp|curl|wget|nano|vi|vim|sed|echo|cat|bash|sh)\b'
+    command: 're:(?i)(\bcrontab\s+-[A-Za-z]*[elr]\b|\bcrontab\s+\S|/etc/cron\.(d|daily|hourly|weekly|monthly)|/var/spool/cron/crontabs)'
+  filter_pkg_manager:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman)\b'
+  condition: selection and not filter_pkg_manager
+  timeframe: 1h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{source_ip}}"
