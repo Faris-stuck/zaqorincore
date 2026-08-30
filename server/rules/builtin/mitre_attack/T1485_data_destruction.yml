@@ -1,0 +1,58 @@
+title: Data destruction — recursive disk wipe, raw device writes, filesystem reformat
+id: b4e2c7f8-3a91-4f6d-9e2b-5c8a1d4f7e02
+description: |
+  Detects Data Destruction activity (MITRE T1485) executed through
+  Unix/Linux system utilities. Adversaries destroy data to interrupt
+  availability, deface systems, or cover tracks; the typical
+  primitives are:
+
+    - recursive forced removal of the filesystem root or system
+      paths: `rm -rf /`, `rm -rf /*`, `rm -rf /etc`, `rm -rf /var`
+    - raw writes to a block device: `dd of=/dev/sda`,
+      `dd of=/dev/nvme0n1`, `dd of=/dev/vda`
+    - filesystem reformat on a device: `mkfs.ext4 /dev/sda`,
+      `mkfs.xfs /dev/nvme0n1`, `mkswap /dev/sda`
+    - secure-erasure utilities run against a raw device:
+      `shred /dev/sda`, `wipefs -a /dev/sda`
+    - device-targeting redirections that truncate block devices:
+      `> /dev/sda`, `: > /dev/sda`
+    - bulk secure-remove: `srm -rz /`
+
+  These patterns are almost never legitimate on a production host
+  and signal an active destruction attempt. Legitimate admin work
+  in `/tmp`, `/var/tmp`, `/var/spool`, `/var/cache`, `/run/user`,
+  `/dev/shm`, and package-manager invocations are filtered out so
+  operators are not paged for routine cleanup.
+
+  Anchoring rules:
+  - destructive utilities use `\b` word boundaries so `rm` is not
+    matched inside `firmware`, `charm`, `terms`, or any other
+    process-name substring
+  - device paths use `\b` + `/dev/(sd|vd|...)\w*` so `of=/dev/sda`
+    is matched but `/dev/sda1.backup` and `/dev/null` are not
+  - the recursive root flag `-rf` (or `-fr`, `-rfv`, `-rf` etc.)
+    is required alongside the target path; bare `rm -r` against
+    user paths is not flagged
+  - `mkfs` is only matched when followed by a `/dev/` target, so
+    `mkfs --help` is not a false positive
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1485/
+tags:
+  - attack.t1485
+  - attack.impact
+  - nist_csf.RS.RP
+level: critical
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/\s*$|\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/(etc|var|boot|usr|home|opt|srv|bin|sbin|lib|root)\b|\bdd\s+.*\bof=/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\b|\bmkfs(\.[a-z0-9]+)?\s+.*/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\b|\bmkswap\s+/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\b|\bshred\s+(-[a-z]+\s+)*/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\b|\bwipefs\s+-a\s+/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\b|\bsrm\s+-[a-z]*r[a-z]*z[a-z]*\s+/|\bsg_format\s+.*/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\b|>\s*/dev/(sd|vd|hd|nvme|mmcblk|loop|md|dm-|xvd)[a-z0-9]*\s*$)'
+  filter_legit:
+    command: 're:(?i)(\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman|zypper|emerge|xbps-install)\b|\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/(tmp|var/tmp|var/spool|var/cache|run/user|dev/shm)\b|^\s*mkfs(\.[a-z0-9]+)?\s+--help\s*$)'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 3600
+dedup_key: "{{user}}:{{hostname}}"
