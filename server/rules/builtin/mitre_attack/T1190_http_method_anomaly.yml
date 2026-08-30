@@ -1,0 +1,30 @@
+title: HTTP method anomaly (TRACE / DEBUG / uncommon verb)
+id: 8d3c0e2b-4f9a-5b2d-8c7f-3a5b9e4d6c8c
+description: |
+  Flags HTTP requests using methods that have no legitimate use
+  in production web apps. TRACE enables XST (Cross-Site Tracing)
+  attacks; DEBUG is a server-side method that should never reach
+  a public listener. PUT/DELETE/PATCH on a public-facing web app
+  often indicate API enumeration.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1190/  # Exploit Public-Facing Application
+  - https://owasp.org/www-community/attacks/Cross_Site_Tracing
+tags:
+  - attack.t1190
+  - attack.initial_access
+  - nist_csf.PR.DS
+level: medium
+detection:
+  selection:
+    source: "nginx_access"
+    http_method: 're:^(TRACE|DEBUG|TRACK|PROPFIND|PROPPATCH|MKCOL|COPY|MOVE|LOCK|UNLOCK)$'
+  condition: selection
+action:
+  kind: block_ip
+  target: "{{src_ip}}"
+  ttl_sec: 3600
+cooldown_sec: 600
+dedup_key: "{{src_ip}}"

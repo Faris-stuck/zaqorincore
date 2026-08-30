@@ -23,7 +23,24 @@ const (
 	SourceAuth         = "auth"
 	SourceNginxAccess  = "nginx_access"
 	SourceNginxError   = "nginx_error"
+	SourceModSecAudit  = "modsec_audit"
 	SourceJournald     = "journald"
+)
+
+// Metadata key names. These MUST match the field names referenced
+// by Sigma rules under server/rules/builtin/* and by the webtail
+// parsers in pkg/webtail. They live here (not in pkg/webtail) so
+// the agent and the rules can both reference them without an
+// import cycle — pkg/* is downstream of internal/*.
+const (
+	WebKeySourceIP  = "src_ip"
+	WebKeyMethod    = "http_method"
+	WebKeyURI       = "uri"
+	WebKeyStatus    = "status_code"
+	WebKeyBytes     = "bytes_sent"
+	WebKeyReferer   = "referer"
+	WebKeyUserAgent = "user_agent"
+	WebKeyAuthUser  = "auth_user"
 )
 
 // Event is the on-wire representation of a single log line the agent

@@ -1,0 +1,35 @@
+title: HTTP login brute force (10 failed auths in 60s)
+id: 7c2b9f1a-3e8d-4a1c-9b6e-2f4a8d3c5e7b
+description: |
+  Detects a burst of HTTP 401/403 responses from a single source
+  IP within 60 seconds — typical signature of credential stuffing
+  or login brute force against a web app. Complements SSH
+  brute-force detection which covers non-HTTP services.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1110/  # Brute Force
+  - https://attack.mitre.org/techniques/T1110.003/  # Password Spraying
+  - https://attack.mitre.org/techniques/T1110.004/  # Credential Stuffing
+tags:
+  - attack.t1110
+  - attack.t1110.003
+  - attack.t1110.004
+  - attack.initial_access
+  - nist_csf.PR.AC
+level: high
+detection:
+  selection:
+    source: "nginx_access"
+    status_code: 're:^(401|403)$'
+  condition: selection
+  count: 10
+  timeframe: 60s
+  groupby: src_ip
+action:
+  kind: block_ip
+  target: "{{src_ip}}"
+  ttl_sec: 1800
+cooldown_sec: 600
+dedup_key: "{{src_ip}}"

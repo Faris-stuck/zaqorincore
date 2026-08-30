@@ -180,6 +180,7 @@ func Run(ctx context.Context, deps Dependencies) error {
 					continue
 				}
 				ev := event.New(deps.Config.AgentID, l.Source, string(l.Raw))
+				enrichWithWebParser(&ev, logger)
 				if err := tr.Send(ctx, ev); err != nil {
 					logger.Debug("app: send failed",
 						slog.String("event_id", ev.ID),
