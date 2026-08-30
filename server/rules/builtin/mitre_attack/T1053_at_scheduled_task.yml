@@ -1,0 +1,34 @@
+title: Scheduled task persistence via at command or /var/spool/at writes
+id: 74cd96e2-4412-5928-bd95-1b4167278c0b
+description: |
+  Detects use of the Unix `at` utility family (at, atq, atrm, batch) or
+  direct writes to the at spool directories (/var/spool/at,
+  /var/spool/cron/atjobs, /var/spool/cron/atspool). The `at` family
+  schedules one-shot commands for future execution and is a frequent
+  post-exploitation persistence mechanism on Linux/Unix hosts.
+  Matches direct invocations, shell-piped invocations, queued jobs,
+  and bare list/remove commands. The atd/cron daemon path is excluded
+  to suppress self-management noise.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1053/
+  - https://attack.mitre.org/techniques/T1053/005/
+tags:
+  - attack.t1053
+  - attack.persistence
+  - attack.execution
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    command: 're:(?i)(\b(at|atq|atrm|batch)\b\s*(\d{1,2}:?\d{2}|now\s*\+\s*\d+|\+\d+|[a-zA-Z]+day|[a-zA-Z]+week|midnight|teatime|tomorrow|noon|hh:mm|<<|\s*$)|/var/spool/(at|cron/atjobs|cron/atspool)/?\S*)'
+  filter_legit:
+    process: 're:(?i)\b(atd|cron|crond|anacron)\b'
+  condition: selection and not filter_legit
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
