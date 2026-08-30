@@ -261,3 +261,127 @@ func TestRun_PropagatesContextCancel(t *testing.T) {
 		t.Fatal("Run did not return after cancel")
 	}
 }
+
+// TestRun_ClosesTransportOnShutdown pins the contract introduced in
+// cycle 22: when the parent context is cancelled, app.Run must call
+// tr.Close() on the way out so the transport supervisor stops
+// reconnecting. Without this assertion, TestRun_PropagatesContextCancel
+// could pass even if Run forgot the tr.Close() call (a regression that
+// would leak goroutines and keep the WebSocket dialer alive).
+func TestRun_ClosesTransportOnShutdown(t *testing.T) {
+	cfg := &config.Config{
+		ServerURL:  "ws://test.invalid",
+		AgentID:    "agent-ctx",
+		LogLevel:   "info",
+		StateDir:   t.TempDir(),
+		DryRun:     true,
+		LogSources: []config.LogSource{},
+	}
+	tr := newFakeTransport()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Dependencies{
+			Config: cfg,
+			Logger: quietLogger(),
+			Client: tr,
+		})
+	}()
+
+	// Let Run reach the <-ctx.Done() wait.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	// Both Run must exit AND tr.Close must have fired before we
+	// declare success. Order is: Run calls tr.Close(), then waits
+	// for the dispatcher, then returns. So by the time <-done
+	// unblocks, the closed channel must already be closed.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+	select {
+	case <-tr.closed:
+		// Expected: tr.Close() was called.
+	default:
+		t.Fatal("tr.Close was not called on shutdown — transport supervisor may leak")
+	}
+}
+
+// TestRun_DrainsPendingTailerLineBeforeReturning pins the drain
+// contract: a tailer line that is in the dispatcher's input channel
+// at the moment ctx is cancelled must still be delivered to the
+// transport before Run returns nil. The dispatcher's select on
+// ctx.Done() must NOT abort the in-flight send.
+func TestRun_DrainsPendingTailerLineBeforeReturning(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "app.log"), []byte(""), 0o644)
+
+	cfg := &config.Config{
+		ServerURL:  "ws://test.invalid",
+		AgentID:    "agent-drain",
+		LogLevel:   "info",
+		StateDir:   dir,
+		DryRun:     true,
+		LogSources: []config.LogSource{{Name: "drain", Path: filepath.Join(dir, "app.log")}},
+	}
+	tr := newFakeTransport()
+
+	// Build a tailer whose channel we hold open — the test sends one
+	// line, then cancels; the dispatcher must pick up the line and
+	// deliver it before Run returns.
+	pending := make(chan tailer.Line, 1)
+	tl := &slowTailer{ch: pending}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Dependencies{
+			Config:    cfg,
+			Logger:    quietLogger(),
+			Client:    tr,
+			NewTailer: func(_ config.LogSource, _ *slog.Logger) TailerSource { return tl },
+		})
+	}()
+
+	// Wait for the goroutine fan-in to start.
+	time.Sleep(50 * time.Millisecond)
+	// Push the line and wait long enough for the fan-in goroutine
+	// to copy it into the dispatcher's `lines` channel. 100ms is
+	// plenty on a quiet test host.
+	pending <- tailer.Line{Source: "drain", Raw: []byte("late-line")}
+	time.Sleep(100 * time.Millisecond)
+
+	// Cancel now. The line is already in the dispatcher's `lines`
+	// channel, so the dispatcher's next select iteration should
+	// pick it up and call tr.Send before the ctx.Done() case wins.
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+
+	got := tr.snapshot()
+	found := false
+	for _, ev := range got {
+		if string(ev.Raw) == "late-line" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected late-line to be drained, transport got %d events", len(got))
+	}
+}
+
+// slowTailer is a TailerSource that yields whatever the test pushes
+// into its channel, blocking Start until the channel is created.
+type slowTailer struct {
+	ch <-chan tailer.Line
+}
+
+func (s *slowTailer) Start(_ context.Context) (<-chan tailer.Line, error) {
+	return s.ch, nil
+}
