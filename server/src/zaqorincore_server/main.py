@@ -36,6 +36,7 @@ from .api.v1 import (
     hunt,
     ingest_cloudflare,
     ingest_webhook,
+    security as security_api,
     soar as soar_api,
     stream,
 )
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_api.router)
     app.include_router(healthcheck_api.router)
     app.include_router(agents_api.router)
+    app.include_router(security_api.router)
 
     # Bundled web console (Phase 9). The SPA lives in /webui/ at the repo
     # root; if the directory is missing (e.g. server-only deployment), the

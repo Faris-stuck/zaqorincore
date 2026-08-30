@@ -17,6 +17,7 @@ from . import (
     hunt,
     ingest_cloudflare,
     ingest_webhook,
+    security,
     stream,
 )
 
@@ -34,4 +35,5 @@ __all__ = [
     "audit",
     "healthcheck",
     "agents",
+    "security",
 ]
