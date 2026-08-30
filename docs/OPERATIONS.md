@@ -353,3 +353,69 @@ No code action — operators reading older release notes can trust
 the version they are on. If you upgrade a deployment and the
 changelog still shows only v2.2.0, pull `main`; the backfill landed
 in `1476eb3`.
+
+## 10. v2.3.0 — read-only `/api/v1/audit` endpoint (cycles 19 + 21)
+
+The server exposes a bounded in-memory ring buffer of operator
+actions at `GET /api/v1/audit` (cycle 19), hardened by edge-case
+tests in cycle 21. Use it when a postmortem needs "who ran what
+in the last hour" without grep'ing the JSON log stream.
+
+### 10.1 Endpoint contract
+
+```bash
+curl -s -H "X-API-Key: $ZAQORIN_API_KEY" \
+  'http://localhost:8080/api/v1/audit?limit=20&action=canary'
+```
+
+| Query param | Type | Bound | Behaviour |
+|---|---|---|---|
+| `actor`   | string | substring | case-sensitive substring on the recorded `actor` (role or key hint) |
+| `action`  | string | substring | case-sensitive substring on the recorded `action` |
+| `since`   | ISO-8601 | inclusive lower bound | naive timestamps are treated as UTC; garbage returns `422` |
+| `limit`   | int    | `1..1000` (default `100`) | page size; values out of range return `422` |
+
+Response shape: `{"count": <int>, "items": [<entry>, ...]}` with
+`items` newest-first. Each entry has `ts` (ISO-8601 UTC), `actor`,
+`action`, `target`, and optional `status` / free-form `extra`.
+
+### 10.2 Auth + retention
+
+- Auth: standard `require_api_key` (X-API-Key) — same as every other
+  operator-facing v1 route. In dev mode the dep is a no-op.
+- Retention: `AUDIT_MAX=1024` entries by default (configurable in
+  `zaqorincore_server/audit.py`). The buffer is process-local;
+  restart clears the log.
+- Writes: explicit `audit.record(...)` calls from key paths. Broader
+  auto-instrumentation is deferred — this is a phase-1 placeholder.
+
+### 10.3 Cycle 21 test coverage
+
+The endpoint is pinned by eight tests in
+`server/tests/test_audit.py`. The four added in cycle 21
+(`commit 4e30d7f`) close the obvious filter edge cases:
+
+- `test_audit_action_filter` — `?action=create canary` matches a
+  substring without false-positives on adjacent actions.
+- `test_audit_action_and_actor_combined` — both filters AND together;
+  one of the two matches alone is not enough.
+- `test_audit_invalid_since_rejected` — `?since=not-a-timestamp`
+  returns `422`, not `500`.
+- `test_audit_limit_bounds_enforced` — `limit=0` and `limit=10000`
+  both return `422`.
+
+Run just this module while iterating:
+
+```bash
+cd server && python -m pytest tests/test_audit.py -v 2>&1 | tail -12
+```
+
+### 10.4 Why bounded and in-memory
+
+This is deliberate. A persistent SQL-backed audit table is the
+right long-term answer, but cycle 19's scope is "expose the buffer
+that already exists in `audit.py` so operators can answer 'who did
+what' from the UI". The bounded `deque` keeps the process memory
+footprint flat under load, and `reset()` makes test setup
+trivially clean. Promote to SQL when a deployment actually needs
+cross-restart retention.
