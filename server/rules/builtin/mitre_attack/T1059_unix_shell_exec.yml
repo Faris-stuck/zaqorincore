@@ -1,0 +1,31 @@
+title: Unix shell spawned with -c flag (bash/sh one-liner abuse)
+id: 7a31f5c2-9d62-4f01-9b1a-bc2b4af7a7c1
+description: |
+  Detects a unix shell (bash, sh, dash, zsh, ksh) launched with the
+  inline -c flag — a common pattern for exploit chains, web shell
+  payload execution, cron-driven malware and living-off-the-land
+  post-exploitation. Distinct from T1059.001 (PowerShell) and
+  T1059.006 (python -c).
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1059/
+  - https://attack.mitre.org/techniques/T1059/004/
+tags:
+  - attack.t1059
+  - attack.execution
+  - nist_csf.DE.AE
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(bash|sh|dash|zsh|ksh)\b'
+    command: 're:\s-c\s'
+  filter_interactive:
+    command: 're:^/bin/(ba)?sh\s*$'
+  condition: selection and not filter_interactive
+  timeframe: 1h
+  count: 1
+cooldown_sec: 900
+dedup_key: "{{user}}:{{source_ip}}"
