@@ -1,0 +1,37 @@
+title: Default account login attempt (T1078.001)
+id: 8a91b3c2-4d6e-4f7a-b8c5-3e9d1f2a4b60
+description: |
+  Flags successful authentication events that target a known default or
+  vendor-shipped account. Default accounts (admin, root, guest, ubnt,
+  postgres, mysql, oracle, tomcat, pi, default, etc.) must not be used
+  in normal operation; a successful login strongly suggests the
+  credentials were never rotated after deployment and that an adversary
+  is leveraging well-known credentials from vendor documentation,
+  leaked default-password lists, or shodan-style scanning.
+
+  Legitimate service-to-service logins (CI runners, monitoring agents)
+  are filtered out by excluding internal service users.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1078/001/
+  - https://cwe.mitre.org/data/definitions/1392.html
+tags:
+  - attack.t1078.001
+  - attack.initial_access
+  - attack.credential_access
+  - nist_csf.PR.AC
+level: high
+detection:
+  selection:
+    event_type: "auth_login"
+    status: "success"
+    user: 're:(?i)(^|\b)(admin|root|guest|default|ubnt|postgres|mysql|oracle|tomcat|pi|test|user|administrator|sa|support|service|ftp|nobody|operator)([\b$]|$)'
+  filter_service:
+    user: 're:(?i)^(svc_|service-|monitoring|backup|ci-|runner-|agent-)'
+  condition: selection and not filter_service
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{source_ip}}"
