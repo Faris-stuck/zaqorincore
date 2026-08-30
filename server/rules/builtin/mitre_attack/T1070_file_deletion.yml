@@ -1,0 +1,32 @@
+title: Indicator removal — destructive file deletion via rm -rf, shred, wipe
+id: 4d8a1c6e-9b3f-4a2e-b7c5-3e6f8d1a4b09
+description: |
+  Detects destructive file deletion commands commonly used for
+  indicator removal (MITRE T1070.004 — File Deletion). Focuses on
+  recursive remove (rm -rf), secure-erase utilities (shred, wipe,
+  srm), and mass deletion targeting sensitive paths (/var/log,
+  /etc, /root, audit trails, shell histories, journald state).
+  Legitimate package-manager removals are excluded.
+author: ZaqorinCore
+date: 2026-08-30
+modified: 2026-08-30
+references:
+  - https://attack.mitre.org/techniques/T1070/
+  - https://attack.mitre.org/techniques/T1070/004/
+tags:
+  - attack.t1070
+  - attack.defense_evasion
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "process_create"
+    process: 're:(?i)\b(rm|shred|wipe|srm|find)\b'
+    command: 're:(?i)(\brm\s+-[A-Za-z]*[rR][fF]\b|\bshred\s+(-[A-Za-z]*[vzu]+\s+)?|\bwipe\s+|\bsrm\s+|\bfind\s+/.+\s+-delete\b|/(var/log|var/log/journal|etc|root|home/\S+/\.(bash_history|zsh_history|profile|bashrc)|var/spool/cron|var/spool/at))'
+  filter_pkg_manager:
+    process: 're:(?i)\b(apt|apt-get|dpkg|yum|dnf|rpm|apk|pacman)\b'
+  condition: selection and not filter_pkg_manager
+  timeframe: 24h
+  count: 1
+cooldown_sec: 1800
+dedup_key: "{{user}}:{{process}}"
