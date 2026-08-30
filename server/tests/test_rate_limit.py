@@ -252,6 +252,67 @@ def test_middleware_skips_excluded_paths() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 5. End-to-end probe-bypass (real FastAPI app)
+# ---------------------------------------------------------------------------
+
+
+async def test_probe_paths_bypass_rate_limit_in_real_app(engine) -> None:
+    """Integration test: build the FastAPI app with a rate-limit
+    budget of 1 per minute and hammer every probe path 10 times each.
+    None of the probes may return 429, because ``_EXCLUDED_PREFIXES``
+    in ``rate_limit.py`` short-circuits them before the bucket
+    lookup. This pins the contract introduced in cycle 13 so a
+    future change cannot accidentally start throttling ``/healthz``,
+    ``/readyz``, or the cycle-8 ``/healthz/deps`` endpoint that ops
+    dashboards scrape.
+    """
+    import os  # noqa: PLC0415
+    from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
+
+    from zaqorincore_server.config import reset_settings  # noqa: PLC0415
+    from zaqorincore_server.main import create_app  # noqa: PLC0415
+
+    os.environ["ZAQORIN_RATE_LIMIT_PER_MIN"] = "1"
+    os.environ.pop("ZAQORIN_API_KEY", None)
+    reset_settings()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 10 hits on each probe path. None should ever be 429.
+        for path in ("/healthz", "/healthz/deps", "/readyz"):
+            for _ in range(10):
+                r = await client.get(path)
+                assert r.status_code != 429, (
+                    f"{path} must never be rate-limited"
+                )
+
+
+async def test_api_path_is_rate_limited_in_real_app(engine) -> None:
+    """Companion to ``test_probe_paths_bypass_rate_limit_in_real_app``
+    — proves the budget=1 config DOES throttle an API path. Without
+    this companion, the previous test could pass trivially even if
+    the rate limiter was disabled entirely.
+    """
+    import os  # noqa: PLC0415
+    from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
+
+    from zaqorincore_server.config import reset_settings  # noqa: PLC0415
+    from zaqorincore_server.main import create_app  # noqa: PLC0415
+
+    os.environ["ZAQORIN_RATE_LIMIT_PER_MIN"] = "1"
+    os.environ.pop("ZAQORIN_API_KEY", None)
+    reset_settings()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r1 = await client.get("/api/v1/alerts")
+        r2 = await client.get("/api/v1/alerts")
+        assert r1.status_code == 200
+        # Second call exceeds budget=1 -> 429.
+        assert r2.status_code == 429
+
+
+# ---------------------------------------------------------------------------
 # Test scaffolding
 # ---------------------------------------------------------------------------
 
