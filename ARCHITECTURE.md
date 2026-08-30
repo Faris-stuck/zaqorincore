@@ -132,3 +132,71 @@ We do **not** protect against:
 - Multi-region / failover for the central server — not in scope for the first release.
 - Sharing ban lists *between* ZaqorinCore instances — explicit non-goal for now. The agent ↔ server loop is the unit of protection.
 - macOS / Windows agents — Linux first, others later, and only if there is real demand.
+
+## Sigma rule engine — defensive guidance for rule authors
+
+The rule engine in `server/src/zaqorincore_server/rule_engine/sigma.py`
+implements a subset of the Sigma spec: `field|startswith:`, `field|endswith:`,
+`field|ge:`, `field|lt:`, plus `re:` and `contains:` literal forms. The matcher
+checks each selection key against `event.metadata[key]` first and falls back to
+`event.source` for the `source` key only.
+
+### Known matcher sharp edges
+
+1. **`contains:` is a raw substring match.** It runs against
+   `str(actual)` *and* `event.raw` (the unparsed tail line). If a rule's
+   filter keyword appears anywhere in the parsed metadata or in the raw
+   tail, the rule fires. This is intentional for noisy log sources but
+   means rule authors should anchor their keyword to a token boundary.
+2. **`startswith:` / `endswith:` are case-sensitive.** `"LSASS.EXE"`
+   does not match `endswith: lsass.exe`. Operators writing rules for
+   Windows process names must match the case the agent actually emits.
+3. **`_match_modifier` returns `False` (fail-safe) for non-numeric
+   `actual` values against `ge:` / `lt:`.** A rule written as
+   `count|ge: 10` against an event whose `count` field is the string
+   `"ten"` will never fire. This is the intended fail-safe; rewrite the
+   rule to coerce upstream.
+4. **Filter-path leakage.** If a Sigma rule's `selection` block uses
+   `contains:`, the needle is compared against `event.raw` as well as the
+   parsed field. A rule that says `contains: /var/log/` will fire on any
+   event whose log path passes through `/var/log/`, including unrelated
+   events emitted from that path. Anchor the needle (`contains: bash`)
+   or restrict to a specific key (`bash_command|contains: bash`) to
+   avoid false positives.
+
+### Defending in v2.4.x rule authoring
+
+Until v2.5.0 lands a tokenizer-aware matcher (tracked in the Q3 backlog),
+follow these rules when writing or reviewing Sigma rules:
+
+- **Prefer anchored patterns over bare substrings.** Use
+  `contains: bash ` (trailing space) or `contains: bash$` style anchors
+  rather than `contains: bash` alone.
+- **Scope every selection to a specific metadata key.** Avoid
+  rule bodies that match against keys whose values include the rule's
+  own filter path.
+- **Add negative selections (`filter`) whenever the `selection` block
+  could match legitimate baseline traffic.** The engine evaluates
+  `filter` after `selection`, and the order is preserved in
+  `CompiledSigmaRule`.
+- **Run `scripts/lint_sigma_rules.sh` before merging.** The cycle 27
+  pre-commit script checks for unanchored `contains:` patterns and
+  flags known-shape false-positive candidates.
+- **Add tests for both the positive case and the *near-miss* case.**
+  Every rule should have at least one test asserting it does NOT fire
+  on traffic that shares a substring with the rule keyword.
+
+### Planned v2.5.0+ work
+
+- **Tokenizer-aware matcher.** Replace raw `contains:` against
+  `event.raw` with a word-boundary regex. This removes the
+  filter-path leakage class of false positives without breaking
+  compatible rules.
+- **Case-insensitive `contains:` opt-in.** Add a `icontains:` modifier
+  so Windows process-name rules don't have to enumerate casings.
+- **Per-rule severity inheritance.** Let a rule's `level` field
+  populate the alert's severity unless explicitly overridden in the
+  detector pipeline.
+- **Sigma rule hot reload.** Today rules are loaded at startup; v2.5.0+
+  should support `SIGHUP`-style reload so operators don't need to
+  bounce the server when shipping a new rule bundle.
