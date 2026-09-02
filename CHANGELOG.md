@@ -5,6 +5,100 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-09-02 — WebUI Agents: Zero-Terminal Onboarding
+
+v3.1.0 lands three operations that previously required a terminal onto
+the SPA. Per the North Star override (2026-09-02, Faris): "WAJIB fokus
+pada KEMUDAHAN UNTUK MEMAKAI NYA alias FULL WEB UI BUKAN TERMINAL."
+
+Twenty-two new API endpoints + three new React views. Every feature
+ships with backend + frontend + tests + docs together — no
+"backend-only" leftovers. See `docs/PHASE26-webui-agents.md` for the
+full design write-up.
+
+### Added
+
+- **Agent Provisioner** (cycle 47, slice 1, `webui-feature` track)
+  - `GET /api/v1/agents/provision/template` — render starter `agent.toml`
+    for OS/arch with TOML escaping (`_toml_quote`)
+  - `POST /api/v1/agents/provision/dry-run` — validate form payload,
+    return preview of what the agent will do at first boot
+  - `POST /api/v1/agents/provision/install-command` — render
+    single-line `curl|bash` command (no multi-line pipelines)
+  - `POST /api/v1/agents/{agent_id}/rotate-secret` — generate new HMAC
+    secret, idempotent
+  - `GET /api/v1/agents/{agent_id}/config` — fetch the running agent's
+    live `agent.toml`
+  - SPA: `AgentsView` with two tabs (`Installed agents` table /
+    `Provision new` form). Provision form generates copy-paste
+    install command + downloadable `agent.toml` + dry-run report.
+- **Rule Studio** (cycle 47, slice 2, `webui-feature` track)
+  - `GET /api/v1/rules`, `GET /api/v1/rules/{rule_id}` — list / detail
+  - `POST /api/v1/rules`, `PUT /api/v1/rules/{rule_id}` — create / update
+  - `DELETE /api/v1/rules/{rule_id}` — remove rule
+  - `POST /api/v1/rules/{rule_id}/test` — run rule against sample log
+  - `POST /api/v1/rules/reload` — hot-reload all rules without restart
+  - SPA: `RulesView` with list cards + edit form + inline test bench.
+- **Source Connector** (cycle 47, slice 3, `webui-feature` track)
+  - `GET /api/v1/sources` — list configured sources
+  - `POST /api/v1/sources` (generic) plus typed routes
+    `cloudflare` / `aws` / `webhook` / `syslog`
+  - `GET /api/v1/sources/{connector_id}/status` — health check
+    (last_event_at, error counters)
+  - `POST /api/v1/sources/{connector_id}/test` — round-trip test
+    (Cloudflare zones API call, webhook HMAC sign + verify, etc.)
+  - `POST /api/v1/sources/{connector_id}/rotate-key` — new API key
+  - `DELETE /api/v1/sources/{connector_id}` — remove source
+  - SPA: `SourcesView` with 4-card platform picker + per-source
+    Test / Rotate / Delete buttons.
+- **`models/source.py`** — new SQLAlchemy ORM model for source connector
+  persistence (table `source_connectors`).
+- **New SPA nav entries**: `Agents`, `Rules`, `Sources` (was 4 entries,
+  now 7).
+- **Header version label** updated from `v0.9.0` → `v3.1.0`.
+- **~62 new test functions** across `test_agents_provision.py` (15),
+  `test_rules_studio.py` (22), `test_sources.py` (25).
+
+### Changed
+
+- **`main.py`**: registered 3 new routers (`agents_provision`,
+  `rules_studio`, `sources`) — total API routes **34 → 56** (+65%).
+- **`api/v1/__init__.py`**: re-exported 3 new router modules.
+- **`webui/static/app.js`**: `+946 LOC`, now 1,554 lines total.
+
+### Substance
+
+| Marker | Count |
+|---|---|
+| New code files | 4 (3 routers + 1 model) |
+| Modified files | 3 (main.py + 2 __init__) |
+| New test files | 3 (~62 tests) |
+| New docs files | 1 (`PHASE26-webui-agents.md`) |
+| New webui views | 3 (Agents / Rules / Sources) |
+| New API endpoints | 22 |
+
+Total LOC: ~3,000.
+
+### CAVEAT — runtime pytest deferred
+
+The VPS this phase was dispatched on lacks PyPI access (`pip install
+pytest pytest-asyncio aiosqlite` fails DNS). All syntax checks
+(`py_compile`) and import checks (`create_app()` boots, 56 endpoints
+registered) pass. `node --check webui/static/app.js` exits 0. Full
+DB-backed pytest execution is deferred to an environment with PyPI
+access — same constraint hit at every previous phase.
+
+### Next phases
+
+Per the WebUI coverage table (north star 2026-09-02):
+
+- v3.2.0 — Software Updater (in-place upgrade with rollback)
+- v3.3.0 — Live Logs view (WebSocket tail + filter)
+- v3.4.0 — User & RBAC management
+- v3.5.0 — SSL/TLS cert lifecycle
+- v3.6.0 — Backup / restore (1-click pg_dump)
+- v3.7.0 — Diagnostic pack (support bundle)
+
 ## [2.9.0] - 2026-08-30 — Q4 Mixed Pack v1 (5 cycles: docs + security + 2× obs + ops + 4× detection)
 
 v2.9.0 closes the v2.2.0 → v2.9.0 streak with the first

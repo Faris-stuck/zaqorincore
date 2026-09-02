@@ -8,5 +8,14 @@ from .base import Base
 from .event import Event
 from .host import Host
 from .soar_delivery import SoarDelivery
+from .source import SourceConnector
 
-__all__ = ["Base", "Host", "Event", "Alert", "Action", "SoarDelivery"]
+__all__ = [
+    "Base",
+    "Host",
+    "Event",
+    "Alert",
+    "Action",
+    "SoarDelivery",
+    "SourceConnector",
+]

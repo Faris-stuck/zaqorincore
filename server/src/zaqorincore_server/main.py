@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import health, v1
 from .api.v1 import (
     agents as agents_api,
+    agents_provision as agents_provision_api,
     alerts,
     audit as audit_api,
     auth as auth_api,
@@ -36,8 +37,10 @@ from .api.v1 import (
     hunt,
     ingest_cloudflare,
     ingest_webhook,
+    rules_studio as rules_studio_api,
     security as security_api,
     soar as soar_api,
+    sources as sources_api,
     stats as stats_api,
     stream,
     version as version_api,
@@ -118,7 +121,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ZaqorinCore Server",
-        version="3.0.0",
+        version="3.1.0",
         description=(
             "Central server for ZaqorinCore. Accepts WebSocket streams "
             "from zaqorin-agent, persists events to PostgreSQL, runs "
@@ -170,6 +173,9 @@ def create_app() -> FastAPI:
     app.include_router(audit_api.router)
     app.include_router(healthcheck_api.router)
     app.include_router(agents_api.router)
+    app.include_router(agents_provision_api.router)
+    app.include_router(rules_studio_api.router)
+    app.include_router(sources_api.router)
     app.include_router(security_api.router)
     app.include_router(stats_api.router)
     app.include_router(version_api.router)
