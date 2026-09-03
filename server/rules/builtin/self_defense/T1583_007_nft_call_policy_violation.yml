@@ -1,0 +1,46 @@
+title: T1583.007 — nft.call policy violation (CWE-285)
+id: a98918bb-350e-42de-8f30-e4652198eb6e
+status: experimental
+description: |
+  Detects an nftables call whose action contradicts a registered operator
+  policy (e.g. policy=allow but action=deny, or vice versa). A mismatch
+  between the declared operator policy and the action an agent emits
+  indicates either a policy misconfiguration that should be fixed before
+  it silences legitimate enforcement, or an attacker who has set up local
+  rules to bypass expected behavior on the host.
+
+  Both halves of the violation are supplied by the engine as a single
+  pre-computed `policy_violation: true` flag, so this rule stays a
+  single-event Sigma rule (matches ADR-010 condition patterns).
+
+  Maps to F-4 from AUDIT-2026-09-03 (Acquired Infrastructure — operator
+  policy divergence).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+  - cwe.285
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_policy_violation:
+    policy_violation: false
+  condition: selection and not filter_policy_violation
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+  - policy
+  - action
+falsepositives:
+  - Operator policy change in flight during a maintenance window
+level: high
