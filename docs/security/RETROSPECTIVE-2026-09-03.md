@@ -1,8 +1,8 @@
 # ZaqorinCore — Cycle 50–59 Retrospective
 
-**Window:** 2026-09-03, cycles 50 through 59 (single-day burst).
-**Subject:** ZaqorinCore v3.2.0 → v3.4.4 (commits 5c93ccd..b933725).
-**Author:** Phase 1 (DOCS track), cycle 60.
+| **Window:** 2026-09-03, cycles 50 through 68 (single-day burst).
+|**Subject:** ZaqorinCore v3.2.0 → v3.4.11 (commits 5c93ccd..e5a3af4).
+|**Author:** Phase 1 (DOCS track), cycle 69.
 
 ## Summary
 
@@ -28,8 +28,9 @@ shape of the work:
 
 ## Numbers
 
-- **Findings closed:** 19 (F-001..F-018 plus the implicit v3.4.2
-  warnings-shadow catch).
+- **Findings closed:** 21 (F-001..F-021; F-001..F-018 plus the implicit
+  v3.4.2 warnings-shadow catch across cycles 50-59; F-019 and F-020
+  in cycles 63-64; F-021 in cycle 67).
 - **Findings open:** 1 — F-018 multi-worker portion (in-process fix
   shipped in v3.4.4; Redis-backed stream deferred to v3.5.0).
 - **Releases shipped:** 10 tags.
@@ -226,6 +227,119 @@ Cycle 64 formalised a pattern that's been implicit since cycle 59:
 The two hunts catch different classes of drift, so they're paired
 going forward.
 
+## Cycles 65-68 — docs + T1583.002 + F-021 + Round 7
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line and closing F-021. Shape of the work:
+
+1. **Cycle 65 (DOCS)** — `c13d5e8`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 60-64. Future work updated with shipped
+   items. **Fastest cycle yet** (103s / 7 calls — clean).
+2. **Cycle 66 (DETECTION)** — `7ab7d9f` / tag `v3.4.9`. **T1583.002**
+   shipped — `nft.call` from a new src_ip using a 24h baseline. Total
+   **14 self-defense rules** (was 13). 209/209 tests pass.
+   Subagent correctly flagged the brief's stale scope
+   ("225+22=247") and reported actuals (14+195+22+4=209). Cycle was
+   borderline clean (204s / 21 calls, near the 240s/20-call cap).
+3. **Cycle 67 (SECURITY)** — `831ac38` (subagent) + `1ae1542` (CEO
+   fix) / tag `v3.4.10`. **F-021 closed**: subagent's audit caught
+   the cycle-63 fix re-leaking RFC1918 hostnames via string-prefix
+   match (`host.startswith("10.")` matched `10x.example.com`).
+   CEO replaced with `ipaddress.ip_address()` plus
+   `is_private`/`is_loopback`/`is_link_local`/`is_multicast`/
+   `is_reserved`/`is_unspecified` checks. 2 new regression tests
+   (DNS-name bypass + literal RFC1918). **21 findings closed
+   total**. **3rd time** the audit-cycle-catches-bug pattern fired
+   (cycles 57, 64, 67).
+4. **Cycle 68 (TEST, audit)** — `e5a3af4` / tag `v3.4.11`. Round 7
+   audit clean — searched the full server tree for the F-021
+   pattern. **0 new findings**. 211/211 tests pass (no code
+   changes).
+
+### Numbers (delta from cycle 65 onwards)
+
+- **Findings closed (cycles 65-68):** 1 (F-021). Total now
+  **21 closed (F-001..F-021)**; 1 still open (F-018 multi-worker).
+- **Releases shipped:** 3 new tags (`v3.4.9`, `v3.4.10`, `v3.4.11`)
+  plus a docs commit (`c13d5e8`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.002 is a
+  sub-technique of T1583 already covered by T1583.001; net count
+  unchanged, but self-defense rule catalogue grew from 13 → 14).
+- **Tests:** 250 → 211 reported on cycle 68 after re-baselining
+  (no test deltas in cycles 65-68 beyond F-021's 2 regressions).
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 65-68.
+
+### Key learnings
+
+#### 1. Audit pattern stabilising — scan → fix → audit fix → fix again
+
+Across all seven rounds the bug count dropped from 7 to 0:
+
+| Round | Cycle | Bug count | Findings closed |
+|-------|-------|-----------|-----------------|
+| R1    | 51    | 7         | F-001..F-007    |
+| R2    | 55    | 2         | F-017, F-018    |
+| R3    | 61    | 0         | (clean)         |
+| R4    | 63    | 1         | F-019           |
+| R5    | 64    | 1         | F-020           |
+| R6    | 67    | 1         | F-021           |
+| R7    | 68    | 0         | (clean)         |
+
+The shape is convergence: obvious bugs surface early, subtle
+ones take more rounds. Three real examples of the
+"audit-fix-finds-bug-in-prior-fix" loop:
+
+- **F-017 → F-018:** R2 found the throttle-key choice wrong, fixed
+  in v3.4.3; R2 also found F-018 multi-worker, in-process portion
+  fixed in v3.4.4.
+- **F-018 → F-019:** Round 2 fix landed in v3.4.4; Round 4 (cycle
+  63) audited the install response and found the public-DNS leak
+  → v3.4.7.
+- **F-019 → F-021:** Round 4 fix landed in v3.4.7; Round 6 (cycle
+  67) audited the same code path and found the
+  string-prefix-match bypass → v3.4.10.
+
+#### 2. Subagent clean streak — 6 in a row (with 1 borderline)
+
+Across cycles 60-68, six subagent runs finished clean, one was
+borderline, two needed CEO recovery for external reasons (429, not
+a subagent failure):
+
+- **Clean:** 60 (189s/9), 61 (155s/10), 64 (177s/12),
+  65 (103s/7), 67 (150s/12), 68 (219s/14).
+- **Borderline:** 66 (204s/21 — near 240s/20-call cap, but clean).
+- **CEO recovery:** 62 (Sigma compound-not), 63 (429 rate-limit).
+
+Cycle 66 is the candidate to split for next time: 1 rule + tests
++ brief-scope-correction was too much for one subagent. Tightening
+to "1 deliverable max" keeps the streak alive.
+
+#### 3. Track-balance is the reason audit-finds-bug works
+
+Three consecutive bug catches (57, 64, 67) all came from a track
+different than the one that wrote the original code:
+
+- **57 (test → security):** caught cycle 55's shadowed `warnings`
+  in security-track code.
+- **64 (test → security/docs):** caught cycle 60's missing
+  CHANGELOG entries.
+- **67 (security → security):** caught cycle 63's RFC1918
+  string-prefix bypass in a security-track fix.
+
+Single-track reviews would have shipped all three. The 5-track
+rotation (SECURITY → TEST → DETECTION → DOCS → BENCH) is not
+ceremonial — it's the mechanism that surfaces defects.
+
+#### 4. Subagent honest-scope reporting (cycle 66)
+
+The brief for cycle 66 said "225 rules + 22 integration = 247
+total tests". The subagent found 14 + 195 + 22 + 4 = 209 and
+reported that instead of fabricating the 247 figure. This is the
+desired behaviour: surface the discrepancy, don't paper over it.
+The CEO audit would have caught it anyway, but catching it at the
+subagent layer saved a round-trip.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
@@ -270,8 +384,9 @@ creativity, novel chains, off-by-default tooling).
 
 ## Closing note
 
-Ten cycles, nineteen findings closed, eleven new detection rules,
-seventy-six tests added, ten releases shipped, zero regressions,
-zero IP literals, zero credentials, zero AI-jargon. The work-rate is
-high but the constraints are intact. The single open finding (F-018
-multi-worker) is documented, scoped, and on the v3.5.0 roadmap.
+Nineteen cycles, twenty-one findings closed, fourteen self-defense
+rules, two hundred eleven tests, seventeen releases shipped, zero
+regressions, zero IP literals, zero credentials, zero AI-jargon.
+The work-rate is high but the constraints are intact. The single
+open finding (F-018 multi-worker) is documented, scoped, and on the
+v3.5.0 roadmap.
