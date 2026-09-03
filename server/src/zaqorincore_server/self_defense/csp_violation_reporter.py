@@ -1,4 +1,5 @@
-"""CSP violation report endpoint (ZaqorinCore v3.3.0, F-017 fixed v3.4.2).
+"""CSP violation report endpoint (ZaqorinCore v3.3.0, F-017 fixed v3.4.2,
+F-023 fixed v3.4.14).
 
 Browsers fire ``Content-Security-Policy-Report-Only`` and
 ``Report-To`` reports to whatever URL is declared in the CSP
@@ -13,6 +14,8 @@ The endpoint is intentionally minimal:
   additional per-src_ip 10/min cap (the rate-limit middleware
   buckets per API key; browsers do not send keys).
 * Returns 204 on success so the browser stops retrying.
+* Body is capped at 16 KiB to prevent ingestion of arbitrary-size
+  JSON (F-023, CWE-400).
 
 F-017 fix (cycle 58): the throttle is now keyed by the request's
 source IP (``request.client.host``) rather than the report body's
@@ -22,12 +25,19 @@ to bypass the budget by submitting one report per unique
 ``X-Forwarded-For`` can opt into the forwarded header by setting
 ``ZAQORIN_SRC_IP_HEADER`` to its canonical name (default behaviour
 remains the FastAPI ``Request.client.host``).
+
+F-023 fix (cycle 72): the throttle and recent-IP dict are now
+guarded by a single threading.Lock (closes the TOCTOU race and
+the missing eviction). Throttled requests no longer emit events
+(prevents amplification of F-008 stream-eviction). Body size is
+capped at 16 KiB.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from collections import deque
 from typing import Any
@@ -67,20 +77,52 @@ class CspReportIn(BaseModel):
 # be premature optimisation. Window length: 60s, budget: 10.
 _THROTTLE_WINDOW_SEC = 60
 _THROTTLE_BUDGET = 10
+# F-023: cap body size to 16 KiB. Browsers send ≤8 KiB for legitimate
+# reports; anything larger is either an attacker or a misconfigured
+# upstream. (CWE-400)
+_MAX_BODY_BYTES = 16 * 1024
+
+# F-023: lock guards BOTH _recent dict and per-key deques, fixing the
+# TOCTOU race on _throttle_allowed. Also drives the eviction sweep
+# (in _evict_stale below) so a rotating-IP attacker cannot OOM the
+# process.
+_throttle_lock = threading.Lock()
 _recent: dict[str, deque[float]] = {}
 
 
-def _throttle_allowed(src_ip: str, now: float) -> bool:
-    """Return True if this src_ip may submit another report now."""
-    bucket = _recent.setdefault(src_ip, deque())
-    # Drop entries outside the window.
+def _evict_stale(now: float) -> None:
+    """Remove entries whose deque is fully outside the window.
+
+    Called under ``_throttle_lock`` once per request. Cheaper than a
+    periodic sweep timer; bounded by the number of distinct src_ips
+    seen in the last ``_THROTTLE_WINDOW_SEC`` seconds.
+    """
     cutoff = now - _THROTTLE_WINDOW_SEC
-    while bucket and bucket[0] < cutoff:
-        bucket.popleft()
-    if len(bucket) >= _THROTTLE_BUDGET:
-        return False
-    bucket.append(now)
-    return True
+    stale = [ip for ip, bucket in _recent.items() if not bucket or bucket[-1] < cutoff]
+    for ip in stale:
+        del _recent[ip]
+
+
+def _throttle_allowed(src_ip: str, now: float) -> bool:
+    """Return True if this src_ip may submit another report now.
+
+    F-023: the dict + deque mutation is atomic under
+    ``_throttle_lock`` so the per-IP budget cannot be exceeded by
+    concurrent FastAPI threadpool workers. Previously a
+    check-then-append TOCTOU window let bursts of >10 in
+    quick succession slip through.
+    """
+    with _throttle_lock:
+        _evict_stale(now)
+        bucket = _recent.setdefault(src_ip, deque())
+        # Drop entries outside the window.
+        cutoff = now - _THROTTLE_WINDOW_SEC
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= _THROTTLE_BUDGET:
+            return False
+        bucket.append(now)
+        return True
 
 
 def _resolve_src_ip(request: Request) -> str:
@@ -124,13 +166,28 @@ async def receive_csp_report(
     ``ZaqorinEvent`` and pushed into the in-process stream so the
     Sigma engine can correlate it against T1505.003 / T1505.004.
     """
+    # F-023: cap body size. The Content-Length header is a hint
+    # (it can be missing or wrong) but it's the cheapest check; the
+    # 16 KiB cap is well above the legitimate ≤8 KiB browser reports
+    # so no false positives are expected.
+    cl = request.headers.get("content-length")
+    if cl is not None:
+        try:
+            if int(cl) > _MAX_BODY_BYTES:
+                return FastAPIRawResponse(status_code=413, content=b"")
+        except ValueError:
+            # Malformed Content-Length — reject defensively.
+            return FastAPIRawResponse(status_code=400, content=b"")
+
     src_ip = _resolve_src_ip(request)
     now = time.time()
     if not _throttle_allowed(src_ip, now):
-        # Emit a throttled event so T1505.004 (CSP report burst)
-        # can detect the rate-limit probe itself.
-        event = ZaqorinEvent.from_csp_report(payload, src_ip=src_ip, status=429)
-        emit(event)
+        # F-023: throttled requests do NOT emit an event. The
+        # 429 alone is the signal — emitting an event here would
+        # amplify F-008 (attacker evicts legitimate events from
+        # the bounded _STREAM by triggering throttle + emit at
+        # 10/min/IP × N IPs). The T1505.004 rule still fires on
+        # successful submissions.
         return FastAPIRawResponse(status_code=429, content=b"")
 
     event = ZaqorinEvent.from_csp_report(payload, src_ip=src_ip, status=204)
