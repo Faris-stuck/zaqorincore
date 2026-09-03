@@ -206,3 +206,56 @@ func TestHandlerDefaultTTLWhenZero(t *testing.T) {
 	// (We don't expose the TTL from outside; this is smoke-level.)
 	_ = time.Now
 }
+
+// F2 regression: WriteSecret must create state_dir 0700 and
+// the secret file 0600. Prior versions left state_dir 0755
+// and the secret 0644, which is world-readable.
+func TestWriteSecretEnforcesTightPerms(t *testing.T) {
+	// Build a sub-dir under t.TempDir() with explicitly
+	// loose perms, so we can prove WriteSecret re-chmods
+	// it to 0700.
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "state")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Also drop a pre-existing secret file with 0644 to
+	// prove WriteSecret re-chmods the file to 0600.
+	preExisting := filepath.Join(dir, "secret")
+	if err := os.WriteFile(preExisting, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := response.WriteSecret(dir, "supersecret-value"); err != nil {
+		t.Fatalf("WriteSecret: %v", err)
+	}
+	// state_dir
+	st, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Mode().Perm(); got != 0o700 {
+		t.Errorf("state_dir mode = %o, want 0o700", got)
+	}
+	// secret file
+	path := filepath.Join(dir, "secret")
+	fst, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fst.Mode().Perm(); got != 0o600 {
+		t.Errorf("secret file mode = %o, want 0o600", got)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "supersecret-value\n" {
+		t.Errorf("secret file content = %q, want trailing newline", string(b))
+	}
+}
+
+func TestWriteSecretRejectsEmptyStateDir(t *testing.T) {
+	if err := response.WriteSecret("", "x"); err == nil {
+		t.Fatal("expected error for empty stateDir")
+	}
+}

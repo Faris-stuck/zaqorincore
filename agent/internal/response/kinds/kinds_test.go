@@ -188,3 +188,40 @@ func TestWebhookSOARDryRun(t *testing.T) {
 		t.Errorf("WebhookSOAR dry-run: %v", err)
 	}
 }
+
+// F4 regression: TarpitIP must reject injection-style
+// input. Even though we use exec.Command with structured
+// args (no shell), an adversarial Target string like
+// "1.2.3.4; rm -rf /" should be filtered by IsValidIPv4
+// long before it ever reaches nft.
+func TestF4_TarpitIPRejectsInjectionTargets(t *testing.T) {
+	bad := []string{
+		"1.2.3.4; rm -rf /",
+		"$(whoami)",
+		"`id`",
+		"1.2.3.4\n; drop table inet zaqorin",
+		"1.2.3.4 --some-nft-flag",
+		"",
+		"not-an-ip",
+	}
+	for _, s := range bad {
+		if err := TarpitIP(testContext(), s, 60, true, testLogger()); err == nil {
+			t.Errorf("TarpitIP accepted injection target %q", s)
+		}
+	}
+}
+
+// F4 regression: BlockIP must also reject injection targets.
+func TestF4_BlockIPRejectsInjectionTargets(t *testing.T) {
+	bad := []string{
+		"1.2.3.4; rm -rf /",
+		"$(whoami)",
+		"1.2.3.4\n; drop table inet zaqorin",
+		"",
+	}
+	for _, s := range bad {
+		if err := BlockIP(testContext(), s, 60, true, testLogger()); err == nil {
+			t.Errorf("BlockIP accepted injection target %q", s)
+		}
+	}
+}

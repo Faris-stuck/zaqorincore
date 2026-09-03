@@ -19,12 +19,12 @@ Filter chain (handled by the worker, NOT this class):
 
 Retry semantics:
 
-  - 2xx → success, no retry
-  - 3xx → success (the redirect is the target's problem;
+  - 2xx -> success, no retry
+  - 3xx -> success (the redirect is the target's problem;
     we report the status as-is)
-  - 4xx → permanent error, no retry, dead-lettered
-  - 5xx → transient error, retry up to `max_retries`
-  - network/timeout → transient error, retry
+  - 4xx -> permanent error, no retry, dead-lettered
+  - 5xx -> transient error, retry up to `max_retries`
+  - network/timeout -> transient error, retry
 
 Body hashing:
 
@@ -35,19 +35,157 @@ Body hashing:
   the source template can drift between the original
   attempt and the replay; the body is the only thing that
   has to match byte-for-byte.
+
+v3.2.1 — SSRF guard (F3 security fix):
+
+The URL is operator-supplied. Before any HTTP request we
+resolve the host and reject any address that falls in:
+
+  - 127.0.0.0/8       (loopback)
+  - 10.0.0.0/8        (RFC1918)
+  - 172.16.0.0/12     (RFC1918)
+  - 192.168.0.0/16    (RFC1918)
+  - 169.254.0.0/16    (link-local; covers cloud metadata)
+  - 0.0.0.0/8         (unspecified / "this network")
+  - 100.64.0.0/10     (CGNAT)
+  - 224.0.0.0/4       (multicast)
+  - 240.0.0.0/4       (reserved)
+  - ::1/128, fc00::/7, fe80::/10 (IPv6 equivalents)
+
+Operators who *do* need to call an internal webhook can
+opt-in per process by setting the env var
+`ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST` to a comma-separated
+list of exact hostnames (no wildcards, no CIDRs) that
+bypass the SSRF guard. Example:
+
+  ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST=hooks.internal,slack.acme
+
+Default behaviour: internal targets are denied. This is
+fail-closed.
 """
 
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import os
+import socket
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from jinja2 import Environment, StrictUndefined, TemplateError
 
 from .. import Alert, DeliverOutcome, DeliveryResult
 from ..config import BackendConfig
+
+
+# IP networks that we refuse to call. See the module
+# docstring for the rationale. Kept as a module-level
+# constant so the test suite can import and assert against
+# it.
+_SSRF_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("224.0.0.0/4"),
+    ipaddress.ip_network("240.0.0.0/4"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _ssrf_allowlist() -> set[str]:
+    """Read ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST at call time.
+
+    Operators can rotate the allowlist without a restart.
+    Lowercased to make hostname matching case-insensitive.
+    """
+    raw = os.environ.get("ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST", "")
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+
+def _is_blocked_address(addr: str) -> bool:
+    """Return True if `addr` is a textual IP that falls in
+    any private / loopback / link-local range."""
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        # Not a literal IP. Treat as blocked to fail closed.
+        return True
+    return any(ip in net for net in _SSRF_BLOCKED_NETWORKS)
+
+
+def validate_webhook_url(url: str) -> str | None:
+    """Return None if `url` is safe to call, else an error
+    message explaining why it was rejected.
+
+    The check is best-effort: a determined attacker who can
+    influence DNS between this check and the actual HTTP
+    request can still hit an internal address. We close the
+    common case (operator misconfiguration, accidental
+    pointer-typo) and document the limitation in SECURITY.md.
+
+    Exported so tests can import it directly.
+    """
+    if not url or not isinstance(url, str):
+        return "generic_webhook: missing or non-string `url` in config"
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"generic_webhook: url must be http(s), got {url!r}"
+    if not parsed.hostname:
+        return f"generic_webhook: url has no hostname: {url!r}"
+
+    host = parsed.hostname.lower()
+    allow = _ssrf_allowlist()
+    if host in allow:
+        return None  # operator opted in for this exact host
+
+    # If the hostname is itself a literal IP, reject
+    # immediately without DNS.
+    try:
+        ipaddress.ip_address(host)
+        literal_ip = True
+    except ValueError:
+        literal_ip = False
+    if literal_ip:
+        if _is_blocked_address(host):
+            return (
+                f"generic_webhook: url host {host!r} is in a "
+                "blocked range (loopback / RFC1918 / link-local / "
+                "multicast / reserved). Set "
+                "ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST to opt in."
+            )
+        return None
+
+    # Hostname — resolve and inspect every returned address.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return f"generic_webhook: cannot resolve hostname {host!r}: {e}"
+
+    seen: set[str] = set()
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        addr = sockaddr[0]
+        if addr in seen:
+            continue
+        seen.add(addr)
+        if _is_blocked_address(addr):
+            return (
+                f"generic_webhook: url host {host!r} resolves to "
+                f"blocked address {addr!r}. Set "
+                "ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST to opt in."
+            )
+    return None
 
 
 class GenericWebhook:
@@ -97,6 +235,11 @@ class GenericWebhook:
             return "generic_webhook: missing `url` in config"
         if not str(url).startswith(("http://", "https://")):
             return f"generic_webhook: url must be http(s), got {url!r}"
+        # F3: SSRF guard — resolve the URL and reject
+        # internal / loopback / link-local targets.
+        ssrf_err = validate_webhook_url(str(url))
+        if ssrf_err is not None:
+            return ssrf_err
         if self._template is None:
             return (
                 self._template_err
@@ -245,4 +388,7 @@ class GenericWebhook:
             )
 
 
-__all__ = ["GenericWebhook"]
+__all__ = [
+    "GenericWebhook",
+    "validate_webhook_url",
+]

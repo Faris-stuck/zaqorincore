@@ -1,26 +1,54 @@
 """WebSocket endpoint: /ws/agent.
 
-The agent v0.1.0+ connects here. We expect:
-    1. HELLO   once on connect
-    2. EVENT   zero or more times
-    3. BYE     on graceful shutdown
-    4. COMMAND_ACK zero or more times (Phase 4+)
+The agent v0.5.0+ connects here. We expect a strict handshake:
 
-After HELLO, the server replies with a `X-Zaqorin-Secret`
-HTTP header (only on first connect; the server's response
-object is exposed via `WebSocket.headers` after accept).
-The agent bootstraps its local `state_dir/shared_secret` from
-that header.
+  1. HELLO   once on connect (v0.5.0+ sends auth material)
+  2. EVENT   zero or more times
+  3. BYE     on graceful shutdown
+  4. COMMAND_ACK zero or more times (Phase 4+)
+
+v3.2.1 PROTO v2 — HMAC challenge-response (F1 security fix):
+
+The legacy protocol accepted any client that claimed an
+agent_id and replied with the host's shared_secret in a
+plaintext HELLO_ACK frame. That was a critical leak: anyone
+who could open a TCP connection to /ws/agent could harvest
+every host's shared secret simply by guessing or scraping
+agent UUIDs.
+
+The new flow is:
+
+  server -> agent : {"type":"challenge","nonce":<32-byte hex>}
+  agent  -> server : {"type":"hello","agent_id":..., "v":2,
+                      "version":"<agent>",
+                      "nonce":<echo>,
+                      "sig":<hex(HMAC-SHA256(shared_secret, nonce))>}
+  server -> agent : {"type":"hello_ack","agent_id":...}
+
+The server verifies sig == HMAC(shared_secret, nonce) before
+registering the host. On any failure the socket is closed
+with 1008 (policy violation). The shared_secret is never
+sent over the wire again.
+
+Old agents (v0.1.0..v0.4.x) that send {"type":"hello", ...}
+without a v field are refused with 1002. Bumping the
+protocol version is acceptable for v3.2.1 — operators
+running a mixed fleet upgrade in lockstep.
 
 The host's WebSocket is registered with the dispatcher on
-connect and unregistered on disconnect, so the dispatcher
-can push signed COMMAND frames back to the agent.
+successful auth and unregistered on disconnect, so the
+dispatcher can push signed COMMAND frames back to the
+agent.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
+import os
+import secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -46,17 +74,31 @@ log = get_logger(__name__)
 std_log = logging.getLogger(__name__)
 
 
+def _compute_sig(secret: str, nonce: str) -> str:
+    """HMAC-SHA256(secret, nonce) hex digest."""
+    return hmac.new(
+        secret.encode("utf-8"),
+        nonce.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 @router.websocket("/ws/agent")
 async def ws_agent(ws: WebSocket) -> None:
     settings = get_settings()
     await ws.accept()
     log.info("ws connected", client=str(ws.client))
     agent_id: uuid.UUID | None = None
-    first_connect = False
     try:
-        # The first frame MUST be a hello. Anything else is a
-        # protocol violation; we close so the agent reconnects and
-        # tries again from a clean state.
+        # --- Step 1: send a server nonce. The client must
+        # echo this nonce back inside a signed HELLO. ---
+        nonce = secrets.token_hex(32)
+        await ws.send_text(
+            json.dumps({"type": "challenge", "nonce": nonce, "v": 2})
+        )
+
+        # --- Step 2: read the agent's reply. It must be a
+        # HELLO with the echoed nonce and a valid signature. ---
         first_raw = await ws.receive_text()
         try:
             first = json.loads(first_raw)
@@ -72,6 +114,18 @@ async def ws_agent(ws: WebSocket) -> None:
             await ws.close(code=1002)  # 1002 = protocol error
             return
 
+        # Protocol v2 mandates "v": 2 on the HELLO frame.
+        # Legacy v0.1.0..v0.4.x agents send no v field and
+        # are rejected. Bumping the protocol is a deliberate
+        # backward-incompatible change for v3.2.1.
+        if first.get("v") != 2:
+            std_log.warning(
+                "ws hello proto mismatch, want v=2 got v=%r",
+                first.get("v"),
+            )
+            await ws.close(code=1002)  # protocol error
+            return
+
         try:
             hello = HelloFrame.model_validate(first)
         except ValidationError as exc:
@@ -79,7 +133,29 @@ async def ws_agent(ws: WebSocket) -> None:
             await ws.close(code=1002)
             return
 
+        # The agent must echo the nonce we sent. A missing or
+        # mismatched nonce is a tampering signal.
+        echoed_nonce = first.get("nonce")
+        if not echoed_nonce or echoed_nonce != nonce:
+            std_log.warning(
+                "ws hello nonce mismatch, want %r got %r",
+                nonce,
+                echoed_nonce,
+            )
+            await ws.close(code=1002)
+            return
+
         agent_id = hello.agent_id
+        sig = first.get("sig", "")
+        if not isinstance(sig, str) or not sig:
+            std_log.warning(
+                "ws hello missing sig from %s", str(agent_id)
+            )
+            await ws.close(code=1002)
+            return
+
+        # --- Step 3: look up the host, then verify the
+        # signature against the host's stored shared_secret. ---
         factory = get_session_factory()
         async with factory() as session:
             host = await host_service.upsert_on_hello(
@@ -87,43 +163,43 @@ async def ws_agent(ws: WebSocket) -> None:
                 agent_id=hello.agent_id,
                 version=hello.version,
             )
-            # Detect first connect by checking if the host had
-            # last_seen_at == first_seen_at (within a second).
-            # We do this client-side rather than reading the
-            # previous value because the upsert already updated
-            # both columns to the same now. Instead, we use
-            # the presence of a `secret` field (always present
-            # post-Phase-4) plus the auto-detect trick: a
-            # bootstrap response is sent on the very first
-            # connection since the host was created.
             await session.commit()
-        # Send the bootstrap secret in a custom response header.
-        # FastAPI/Starlette do not let us add headers after
-        # accept(), so we use the lower-level `ws.headers` dict
-        # which the underlying ASGI response honours on the
-        # first frame's reply. Starlette has `ws.send_message`
-        # but the right idiom here is `ws.scope["headers"]`
-        # mutation; the cleanest portable path is to surface
-        # the secret in a dedicated HELLO_ACK frame on the
-        # WebSocket, AFTER the initial HELLO. v0.1.0 agents
-        # ignore the extra frame; v0.4.0+ agents read it.
+
+        if not host.secret:
+            std_log.warning(
+                "ws hello from %s but host has no secret",
+                str(agent_id),
+            )
+            await ws.close(code=1008)
+            return
+        expected = _compute_sig(host.secret, nonce)
+        if not hmac.compare_digest(expected, sig):
+            std_log.warning(
+                "ws hello bad signature from %s", str(agent_id)
+            )
+            # 1008 = policy violation
+            await ws.close(code=1008)
+            return
+
         log.info(
             "ws hello accepted",
             host_id=str(agent_id),
             version=hello.version,
-            secret_present=bool(host.secret),
+            proto_v=2,
         )
-        # Send HELLO_ACK with the secret. The agent reads it and
-        # persists to state_dir/shared_secret.
+
+        # --- Step 4: send HELLO_ACK. Crucially, the
+        # shared_secret is NOT included any more. ---
         await ws.send_text(
             json.dumps(
                 {
                     "type": "hello_ack",
                     "agent_id": str(host.id),
-                    "shared_secret": host.secret,
+                    "v": 2,
                 }
             )
         )
+
         # Register with the dispatcher so COMMAND frames can be
         # pushed back.
         await registry.register(host.id, ws)

@@ -60,7 +60,7 @@ func NewHandler(cfg *config.Config, log *slog.Logger) (*Handler, error) {
 	if cfg.StateDir == "" {
 		return nil, errors.New("response: cfg.StateDir is empty")
 	}
-	if err := os.MkdirAll(cfg.StateDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("response: create state_dir: %w", err)
 	}
 	return &Handler{
@@ -68,6 +68,39 @@ func NewHandler(cfg *config.Config, log *slog.Logger) (*Handler, error) {
 		log:       log,
 		appliedAt: make(map[string]time.Time),
 	}, nil
+}
+
+// WriteSecret atomically writes the host's shared secret to
+// cfg.StateDir/secret with mode 0600, creating StateDir with
+// mode 0700 if needed. The state directory and secret file are
+// not world-readable (F2 security fix: prior versions left
+// the state directory at 0755 and the secret file at 0644,
+// allowing any local user to read the HMAC key).
+func WriteSecret(stateDir, secret string) error {
+	if stateDir == "" {
+		return errors.New("response: WriteSecret: stateDir is empty")
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return fmt.Errorf("response: WriteSecret: mkdir state_dir: %w", err)
+	}
+	// MkdirAll is a no-op if the directory already exists,
+	// so an operator who upgrades in place and has a
+	// pre-existing state_dir with loose perms would still
+	// be exposed. Re-chmod explicitly to 0700.
+	if err := os.Chmod(stateDir, 0o700); err != nil {
+		return fmt.Errorf("response: WriteSecret: chmod state_dir: %w", err)
+	}
+	path := filepath.Join(stateDir, "secret")
+	// Write with the desired mode at creation time, then
+	// chmod explicitly in case the file already existed with
+	// looser permissions from a prior install.
+	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
+		return fmt.Errorf("response: WriteSecret: write secret: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("response: WriteSecret: chmod secret: %w", err)
+	}
+	return nil
 }
 
 // LoadSecret (re)reads the secret file. Cheap; can be called from a

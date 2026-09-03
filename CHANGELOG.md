@@ -1,3 +1,99 @@
+## [3.2.1] - 2026-09-03 - Security: WS auth, secret file perms, SOAR SSRF, nft input validation
+
+v3.2.1 is an emergency security patch that addresses four
+findings from the v3.2.0 self-hunt. No detection or
+detection-coverage changes; the public detection surface is
+identical to v3.2.0.
+
+### Security fixes
+
+- **F1 (CRITICAL) — WebSocket /ws/agent HMAC challenge-response.**
+  The handshake now requires the agent to sign a server-issued
+  32-byte nonce with the host's shared_secret (HMAC-SHA256).
+  The server verifies the signature with constant-time
+  comparison before registering the host. The shared_secret is
+  no longer transmitted in the HELLO_ACK frame. The wire
+  protocol is bumped to v=2; legacy v0.1.0..v0.4.x agents are
+  refused with code 1002. Operators upgrading in place should
+  roll the server first, then the agents.
+
+- **F2 (CRITICAL) — Agent secret file & state_dir permissions.**
+  `state_dir` is now created with mode 0700 and the
+  `state_dir/secret` file is written with mode 0600, then
+  chmod'd explicitly to close the race where a pre-existing
+  file had looser permissions. A new `response.WriteSecret`
+  helper centralises the write so future call-sites can't
+  regress. Pre-existing installs should `chmod 700
+  /var/lib/zaqorin-agent && chmod 600
+  /var/lib/zaqorin-agent/secret` once after upgrade.
+
+- **F3 (HIGH) — SOAR generic_webhook SSRF guard.** The
+  operator-supplied webhook URL is now resolved and any
+  hostname whose A/AAAA record falls in a private / loopback /
+  link-local / multicast / reserved range (RFC1918, 127.0.0.0/8,
+  169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4,
+  ::1, fc00::/7, fe80::/10) is rejected with a clear error.
+  Operators who genuinely need to call an internal webhook
+  can opt in per process via the new env var
+  `ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST` (comma-separated
+  exact hostnames, case-insensitive). Default behaviour is
+  fail-closed.
+
+- **F4 (HIGH) — Agent nft input validation.** All nft
+  invocations in `agent/internal/response/kinds/kinds.go`
+  and `agent/internal/response/response.go` were audited;
+  every call already uses `exec.CommandContext` with
+  structured args (no shell). The change is defence-in-depth:
+  `TarpitIP` and `BlockIP` now reject injection-style
+  targets (`1.2.3.4; rm -rf /`, newline injection,
+  command-substitution) at the validator layer with a
+  clear error, before they ever reach the nft CLI. New
+  tests cover the injection set.
+
+### Backward compatibility
+
+- Server: Bumped WebSocket wire protocol to v=2. v0.1.0..v0.4.x
+  agents are refused with code 1002 (protocol error). This is
+  a deliberate, documented break. Operators running a mixed
+  fleet must upgrade agents before server.
+- Agent: Permission changes are forward-only; no protocol
+  change. Existing secret files are re-chmod'd on next
+  `WriteSecret` call; operators who set the secret by hand
+  should re-chmod manually.
+
+### Added
+
+- `server/src/zaqorincore_server/api/v1/stream.py`:
+  HMAC challenge-response handshake; no shared_secret in
+  HELLO_ACK.
+- `server/src/zaqorincore_server/soar/backends/generic_webhook.py`:
+  `validate_webhook_url` + module-level block-list;
+  `ZAQORIN_SOAR_WEBHOOK_URL_ALLOWLIST` env var.
+- `agent/internal/response/response.go`: `WriteSecret` helper;
+  state_dir 0700, secret file 0600.
+- `server/tests/test_security_v3_2_1.py`: 12 regression tests
+  covering F1 / F2 / F3 / F4.
+- `agent/internal/response/response_test.go`:
+  `TestWriteSecretEnforcesTightPerms` +
+  `TestWriteSecretRejectsEmptyStateDir`.
+- `agent/internal/response/kinds/kinds_test.go`:
+  `TestF4_TarpitIPRejectsInjectionTargets` +
+  `TestF4_BlockIPRejectsInjectionTargets`.
+
+### Known limitations (documented, not fixed in this release)
+
+- TOCTOU between SSRF DNS resolution and the actual HTTP
+  request: a determined attacker who can influence DNS
+  responses between the two lookups can still hit an
+  internal address. The check closes the common
+  misconfiguration case; full mitigation requires an
+  outbound proxy / eBPF, tracked for v3.3.0.
+- WebSocket message size limit, audit-log append-only
+  enforcement, and `/api/v1/*` rate limiting remain on the
+  v3.3.0 backlog (Medium / Low from Phase 1 recon).
+
+---
+
 ## [3.2.0] - 2026-09-03 — T1583.001 Domain Acquisition Detection Pack
 
 v3.2.0 adds detection coverage for **MITRE ATT&CK T1583.001 — Acquire
