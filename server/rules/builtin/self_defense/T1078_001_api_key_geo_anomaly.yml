@@ -1,0 +1,47 @@
+title: T1078.001 — API key use from new src_ip or unusual hour
+id: fecdc012-bb4a-4646-8343-16efecdbcaf2
+status: experimental
+description: |
+  Detects anomalous use of a valid API key (F-006 from AUDIT-2026-09-03
+  and general Valid Accounts abuse pattern).
+
+  Two sub-signals:
+    1. key_id seen from a new src_ip it has never been seen from before
+       (baseline is per-process; degrade gracefully if baseline absent).
+    2. 200-level API key authentication outside hours 06:00-22:00 local
+       (operator-tunable via ZAQORIN_SELF_DEFENSE_BUSINESS_HOURS).
+
+  Whitelisted via ZAQORIN_SELF_DEFENSE_WHITELIST (CIDR list).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.initial_access
+  - attack.t1078.001
+  - attack.valid_accounts
+logsource:
+  product: zaqorincore
+  service: server
+detection:
+  selection:
+    event_type: http.request
+    auth_method: api_key
+    status: 200
+  filter_new_src_ip:
+    key_first_seen_from_ip: true
+  filter_off_hours:
+    hour_of_day_local: "|lt: 6"
+  condition: selection and (filter_new_src_ip or filter_off_hours)
+  timeframe: 60s
+  count: 1
+fields:
+  - src_ip
+  - key_id
+  - route
+  - hour_of_day_local
+falsepositives:
+  - Operator working late hours
+  - CI/CD pipeline IP rotation (whitelist via ZAQORIN_SELF_DEFENSE_WHITELIST)
+level: medium

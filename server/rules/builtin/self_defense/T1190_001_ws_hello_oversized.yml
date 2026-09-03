@@ -1,0 +1,45 @@
+title: T1190.001 — WS HELLO frame malformed or oversized
+id: 5ff1522c-f2d7-4305-a0b7-eb173cfd85a2
+status: experimental
+description: |
+  Detects malformed or oversized WebSocket HELLO frames that may indicate
+  exploit attempts against /ws/agent (F-001 from AUDIT-2026-09-03).
+
+  After v3.2.1 added the HMAC challenge + frame size cap, this rule fires
+  when the cap is tripped (>=8192 bytes) or when the frame is empty
+  (0 bytes). Either signal indicates an attempt to abuse the endpoint
+  before the cap rejects it.
+
+  Operators can whitelist their own build agents via
+  ZAQORIN_SELF_DEFENSE_WHITELIST (CIDR list). The whitelist is applied
+  by the runner, not the rule — rules remain placeholders only.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.initial_access
+  - attack.t1190
+  - attack.exploitation_for_external_facing
+logsource:
+  product: zaqorincore
+  service: server
+detection:
+  selection:
+    event_type: ws.hello
+  filter_oversized:
+    message_size_bytes: "|ge: 8192"
+  filter_empty:
+    message_size_bytes: 0
+  condition: selection and (filter_oversized or filter_empty)
+  timeframe: 60s
+  count: 1
+fields:
+  - src_ip
+  - agent_id
+  - message_size_bytes
+falsepositives:
+  - Legitimate large HELLO from heavy-tailed agent build (whitelist via ZAQORIN_SELF_DEFENSE_WHITELIST)
+  - Misconfigured CI runner retrying empty HELLO after auth failure
+level: high

@@ -1,0 +1,43 @@
+title: T1505.003 — WebUI CSP violation (blocked inline script or style)
+id: 0b7917bc-2e95-470b-bf91-69311e900f35
+status: experimental
+description: |
+  Detects browser-side CSP violation reports (F-007 / F-016 from
+  AUDIT-2026-09-03). The /api/v1/_csp-report endpoint ingests the
+  standard CSP violation JSON. The rule fires when >=3 reports
+  come from the same src_ip within 10 minutes AND the violated
+  directive is script-src or style-src (the two XSS-relevant
+  directives).
+
+  Single reports are normal during WebUI development; the
+  threshold filters out the noise.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.initial_access
+  - attack.t1505
+  - attack.server_software_component
+logsource:
+  product: zaqorincore
+  service: webui
+detection:
+  selection:
+    event_type: csp.violation
+    violated_directive:
+      - script-src
+      - style-src
+  condition: selection
+  timeframe: 10m
+  count: 3
+fields:
+  - src_ip
+  - violated_directive
+  - blocked_uri
+  - document_uri
+falsepositives:
+  - Browser extensions injecting inline styles into the WebUI (operator can whitelist their own network)
+  - Browser bugs producing duplicate reports on first page load
+level: medium

@@ -1,0 +1,42 @@
+title: T1098.001 — Audit log JSONL persistence silently disabled
+id: 0fa0cb63-cd85-4bb9-825e-fcf2ae987ad2
+status: experimental
+description: |
+  Detects the audit-log JSONL persistence being disabled unexpectedly
+  (F-008 from AUDIT-2026-09-03). The audit healthcheck emits an
+  audit.healthcheck event every 5 minutes carrying
+  jsonl_persistence_enabled. A single observation of false is a
+  signal — silent disable is a stealth attack pattern (defence
+  evasion + impair defenses).
+
+  The rule is intentionally noisy at threshold=1 because a single
+  disabling event is enough to require operator review; the false
+  positives listed below are rare and worth investigating regardless.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.defense_evasion
+  - attack.t1098
+  - attack.account_manipulation
+  - attack.impair_defenses
+logsource:
+  product: zaqorincore
+  service: audit
+detection:
+  selection:
+    event_type: audit.healthcheck
+    jsonl_persistence_enabled: false
+  condition: selection
+  timeframe: 24h
+  count: 1
+fields:
+  - src_ip
+  - audit_log_dir
+  - jsonl_persistence_enabled
+falsepositives:
+  - Operator intentionally disabled JSONL for a one-off debug session (should be re-enabled before deploy)
+  - Filesystem permission drift on ZAQORIN_AUDIT_LOG_DIR after chmod change
+level: high

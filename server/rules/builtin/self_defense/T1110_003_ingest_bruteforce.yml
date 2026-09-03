@@ -1,0 +1,45 @@
+title: T1110.003 — Ingest endpoint 401/403 burst from single IP
+id: 3681cf70-c024-4a9f-9d1d-cb087dedccfa
+status: experimental
+description: |
+  Detects credential stuffing / brute-force against the ingest endpoints
+  (F-013 from AUDIT-2026-09-03). Fires when a single src_ip produces
+  >=20 401/403 responses against /api/v1/ingest/* routes in a 5-minute
+  window.
+
+  The rule complements the existing rate-limit middleware by producing
+  a Sigma-level signal the runner can correlate with other behaviour,
+  not just a 429 response.
+
+  Whitelisted via ZAQORIN_SELF_DEFENSE_WHITELIST (CIDR list).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.credential_access
+  - attack.t1110.003
+  - attack.password_spraying
+logsource:
+  product: zaqorincore
+  service: server
+detection:
+  selection:
+    event_type: http.request
+    route: "|startswith: /api/v1/ingest/"
+    status:
+      - 401
+      - 403
+  condition: selection
+  timeframe: 5m
+  count: 20
+fields:
+  - src_ip
+  - route
+  - status
+  - key_id
+falsepositives:
+  - Single misconfigured client retrying after credential rotation
+  - Penetration-test traffic (whitelist via ZAQORIN_SELF_DEFENSE_WHITELIST)
+level: high
