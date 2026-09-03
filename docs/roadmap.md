@@ -715,6 +715,99 @@ formatted Slack message to a test channel within 2 seconds,
 the message has a working "View in ZaqorinCore" button,
 and the delivery is recorded in the audit log.
 
+---
+
+## v3.x — Detection Pack expansion
+
+Goal: ship 1 new MITRE technique per minor release, each as a
+precision-engineered Sigma pack with a per-pack PHASE doc. Track
+runs after the v2.x compliance / SOAR foundation (above) and is
+interleaved with the WebUI track (v3.1.0 / Phase 26).
+
+### v3.1.0 — WebUI Agents ✅ (Phase 26)
+
+Three SPA flows that used to need SSH + TOML editing:
+Agent Provisioner, Rule Studio, Source Connector.
+See [`docs/PHASE26-webui-agents.md`](PHASE26-webui-agents.md).
+
+### v3.2.0 — T1583.001 Domain Acquisition Detection Pack ✅ (Phase 29)
+
+Five Sigma rules covering MITRE T1583.001 — Acquire
+Infrastructure: Domains. Coverage rises **16/200 → 17/200 (8.5%)**.
+
+* `T1583_001_domain_acquisition_typosquat` — Levenshtein 1–2
+  from protected brand (default: komatsu.co.id, microsoft.com,
+  google.com; configurable via `ZAQORIN_PROTECTED_BRANDS`).
+* `T1583_001_domain_acquisition_nrd` — internal host resolves a
+  domain registered ≤ 5 minutes ago.
+* `T1583_001_domain_acquisition_tld_burst` — burst of queries to
+  abuse-prone TLDs (.xyz, .top, .tk, .ml, .cf, .ga).
+* `T1583_001_domain_acquisition_dormant` — domain dormant ≥ 90 days
+  receives a burst of queries.
+* `T1583_001_domain_registration_internal` — internal POST to
+  `/register` or `/create` with an unknown UA.
+
+Each rule ships at `promotion: experimental`. Precision target: 80%
+(multi-signal + threshold + whitelist + experimental promotion).
+44 new tests; Cybersec review PASS on commit `cdcefcb`.
+
+Canonical doc: [`docs/PHASE29-dns-intel-detection.md`](PHASE29-dns-intel-detection.md).
+
+### v3.2.1 — Precision telemetry ⏳
+
+Counter scaffolding to measure actual rule precision against the
+80% target:
+
+* Per-rule firing counter on the Sigma engine.
+* Alert-to-incident conversion endpoint (close reason required).
+* 30-day rolling FP rate per rule exposed at `/api/v1/stats/precision`.
+
+Goal: turn the precision commitment from a design statement into a
+measured number. No new rules.
+
+### v3.3.0 — DNS intelligence depth ⏳
+
+Forward-look items that need live data sources the v3.2.0 pack
+deliberately deferred:
+
+* **RDAP live feed** — implement `WHOISRDAPClient` (today: stub
+  in `dns_intel_interface.py`). Backed-off per-domain cache, no
+  hammering of registrars.
+* **Expanded brand list** — grow from 3 defaults to ~30+ brands
+  (top-100 by global phishing volume) plus a per-region overlay
+  file.
+* **Distinct-SLD correlator** — downstream correlator that fans
+  engine output through a `distinct` count before alert promotion
+  (engine currently counts events, not distinct domains).
+* **Multi-prefix UA allowlist** — extend the Sigma engine to
+  accept a list of `startswith` values under one filter block,
+  unblocking the full UA allowlist in the registration rule.
+
+### v3.4.0 — T1583.002 / T1583.003 ⏳
+
+Two sibling techniques in the same Resource Development tactic:
+
+* **T1583.002 — DNS Server** (adversary operates their own
+  authoritative DNS).
+* **T1583.003 — Virtual Private Server** (VPS rental as
+  infrastructure).
+
+Same precision-design commitment (multi-signal + threshold +
+whitelist + experimental). Per-technique pack, per-technique PHASE
+doc.
+
+### v3.5.0+ — Queued
+
+Detection backlog is reviewed per-cycle. Candidates waiting:
+
+* T1071.001 (Application Layer Protocol: Web) — deeper coverage of
+  the registration rule's `web_request` channel.
+* T1566.001 (Spearphishing Attachment) — file-type telemetry from
+  the agent's MIME sniffer.
+* T1567 (Exfiltration Over Web Service) — outbound flow analytics.
+
+---
+
 ## Feedback
 
 Open an issue, or use the discussion board. Roadmap is a living document and we will update it as reality diverges from the plan.

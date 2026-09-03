@@ -106,9 +106,38 @@ Phase 2 adds the server that consumes it. Details in
 | **8** | Compliance pack — 51 rules across 4 frameworks (ISO 27001, NIST 800-53, PCI DSS 4.0, UU PDP) + MITRE ATT&CK | ✅ Shipped (v0.8.0) |
 | **9** | Web console (alerts / hunt / evidence / canary) | ✅ Shipped (v0.9.0) |
 | **10** | Docs site + launch smoke + HN post | ✅ Shipped (v1.0.0) |
+| **26** | WebUI Agents: zero-terminal onboarding (Agent Provisioner, Rule Studio, Source Connector) | ✅ Shipped (v3.1.0) |
+| **29** | T1583.001 Domain Acquisition Detection Pack — 5 precision Sigma rules + Levenshtein engine | ✅ Shipped (v3.2.0) |
 
 **v1.0.0 is the first production-ready release.** 170/170 server
 tests pass. 10/10 Go packages pass. 9/9 launch smoke checks pass.
+
+## Detection coverage
+
+MITRE ATT&CK Enterprise techniques detected by ZaqorinCore:
+
+* **17 / 200 (8.5%)** — last bump: v3.2.0 added T1583.001 (5 rules)
+
+| Technique | Status | Pack |
+|---|---|---|
+| T1583.001 Acquire Infrastructure: Domains | ✅ Shipped (v3.2.0) | 5 rules: typosquat (Levenshtein 1–2), NRD, TLD burst, dormant, internal registration |
+| T1003.001 LSASS memory dump | ✅ Shipped (v2.9.0) | 1 rule |
+| T1056.001 Keylogging | ✅ Shipped (v2.9.0) | 1 rule |
+| T1110.001 Password guessing | ✅ Shipped (v2.9.0) | 1 rule |
+| SSH brute-force, web shell, C2 beacon, lateral movement, and 9 more | ✅ Shipped (v0.3.0 → v1.0.0) | per-technique |
+
+Full coverage table and per-rule examples live under
+[`server/rules/builtin/mitre_attack/`](./server/rules/builtin/mitre_attack/).
+The canonical design doc for the latest pack is
+[`docs/PHASE29-dns-intel-detection.md`](./docs/PHASE29-dns-intel-detection.md).
+
+## Recent releases
+
+* **v3.2.0 — 2026-09-03** — T1583.001 Domain Acquisition Detection
+  Pack (5 precision Sigma rules + Levenshtein engine; MITRE 16/200 → 17/200).
+* **v3.1.0 — 2026-09-02** — WebUI Agents (Agent Provisioner, Rule Studio, Source Connector).
+* **v2.9.0 — 2026-Q3** — Q4 Detection Pack v1 (T1003.001, T1056.001, T1110.001).
+* **v1.0.0 — 2026-08** — First production-ready release. 170/170 server tests pass.
 See [`docs/operator-guide.md`](./docs/operator-guide.md) and the
 live docs site at
 `https://faris-stuck.github.io/zaqorincore/`.
