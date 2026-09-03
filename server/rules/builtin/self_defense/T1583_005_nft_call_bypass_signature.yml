@@ -1,0 +1,51 @@
+title: T1583.005 — nft.call with bypass signature (CWE-285 / rule shadowing)
+id: 17a5bf19-248a-44ce-b116-9f64a021f642
+status: experimental
+description: |
+  Detects an nftables call whose rule body matches a known-bypass
+  signature: chains named with NUL bytes, hook specifications that
+  bypass evaluation, or rules with no-op predicates
+  (e.g. `ip saddr != 0.0.0.0/0`). The runner projects a boolean
+  metadata flag (`bypass_signature: true`) onto every nft.call event
+  so this rule stays a single-event Sigma rule and matches the
+  engine's supported condition patterns (ADR-010).
+
+  A bypass signature match means the operator's existing firewall is
+  being shadowed or disabled by an attacker — for example, a chain
+  named with embedded NUL bytes may sort after the legitimate chains
+  and never be evaluated, a hook spec may divert packets before the
+  operator's rules see them, or a no-op predicate may keep a deny
+  rule that never actually matches. None of these are patterns a
+  legitimate operator would intentionally roll out.
+
+  Maps to F-7 from AUDIT-2026-09-03 (Acquired Infrastructure —
+  firewall shadowed or disabled via bypass signature).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+    bypass_signature: true
+  filter_bypass_signature:
+    bypass_signature: false
+  condition: selection and not filter_bypass_signature
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+  - rule_body
+  - bypass_kind
+falsepositives:
+  - Operator intentionally testing a bypass signature in a controlled lab environment
+level: high

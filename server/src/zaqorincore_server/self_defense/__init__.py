@@ -19,7 +19,7 @@ Public surface:
   ``_STREAM_LOCK``. Use for atomic read-modify-write of the stream,
   e.g. snapshot + clear in a single critical section.
 
-The pack is intentionally focused (16 rules as of v3.4.14) and is
+The pack is intentionally focused (17 rules as of v3.4.17) and is
 expected to grow over time as new attack patterns are observed.
 """
 
