@@ -1,0 +1,47 @@
+title: T1583.003 — nft.call with banned target (C2 / sinkhole / Tor exit)
+id: 093a0b95-3894-4836-8883-302899ed354e
+status: experimental
+description: |
+  Detects an nftables call that adds a rule whose target matches the
+  operator's banned-target list. The banned-target list is curated by
+  the operator and is fed to the runner, which projects a boolean
+  metadata flag (`target_banned: true`) onto every nft.call event so
+  this rule stays a single-event Sigma rule and matches the engine's
+  supported condition patterns (ADR-010).
+
+  A banned-target match means the agent's network is being
+  deliberately redirected to a host the operator has flagged as
+  hostile — commonly a known Tor exit relay, a sinkholed C2 domain
+  resolved to a sinkhole address, or an IP block in the F-009
+  deny-list. A legitimate operator would not, under any normal
+  circumstance, add an nftables rule whose target is on that list.
+
+  Maps to F-5 from AUDIT-2026-09-03 (Acquired Infrastructure —
+  redirect to known-bad target).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_not_banned:
+    target_banned: false
+  condition: selection and not filter_not_banned
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+falsepositives:
+  - Operator explicitly testing the deny-list with a controlled nft call
+  - Time-boxed containment drill rehearsed against a synthetic sinkhole
+level: high

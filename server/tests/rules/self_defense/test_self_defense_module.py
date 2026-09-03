@@ -16,7 +16,7 @@ from zaqorincore_server.self_defense import (
 
 
 def test_singleton_rules_loaded() -> None:
-    assert len(SELF_DEFENSE_RULES) == 14
+    assert len(SELF_DEFENSE_RULES) == 15
 
 
 def test_rule_titles_match_rules() -> None:

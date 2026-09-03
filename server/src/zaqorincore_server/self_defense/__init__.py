@@ -14,7 +14,7 @@ Public surface:
   in-process stream so the Sigma engine can correlate. The runner
   is responsible for actually firing rules; ``emit`` only buffers.
 
-The pack is intentionally small (6 rules, 1 endpoint) and is
+The pack is intentionally focused (15 rules as of v3.4.11) and is
 expected to grow over time as new attack patterns are observed.
 """
 
