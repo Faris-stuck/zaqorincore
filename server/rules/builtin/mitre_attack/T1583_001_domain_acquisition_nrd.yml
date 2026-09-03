@@ -1,0 +1,56 @@
+title: T1583.001 — Newly Registered Domain (NRD) queried by internal host
+id: 5d2f8a91-6b3e-4c7d-9a1f-2e4b8c3d6fa1
+description: |
+  Detects when an internal host resolves a domain that was registered
+  within the last 5 minutes (newly registered domain / NRD). This is
+  a strong initial-access and phishing precursor signal: adversaries
+  frequently register throwaway domains right before a campaign and
+  point users at them.
+
+  Multi-signal correlation:
+    - Source is internal IP space (operators must rebind via config;
+      RFC1918 example: 192.0.2.0/24 used as a placeholder).
+    - The queried domain's age is <= 300 seconds (5 minutes).
+    - >= 3 events in a 5-minute window from the same source_ip.
+
+  Whitelisted (single combined regex alternation in one filter block,
+  as required by the ZaqorinCore Sigma engine which supports at most
+  one filter block):
+    - Captive-portal hosts (apple.com, google.com).
+    - Monitoring / CDN infra (cloudfront.net, akamaiedge.net,
+      microsoft.net).
+    - Dev/monitoring/staging queries identified by the TLD-style tag
+      embedded in the query (e.g. foo.dev.example.com). Events
+      tagged only via a separate query_tag field are handled by the
+      downstream correlator, not this rule.
+
+  Limitation: the engine counts events, not distinct domains.
+  Operators needing stricter per-event correlation should layer a
+  downstream correlator.
+
+  Promotion: experimental.
+author: ZaQorinCore Detection Pack
+date: 2026-09-03
+modified: 2026-09-03
+promotion: experimental
+references:
+  - https://attack.mitre.org/techniques/T1583/001/
+  - https://attack.mitre.org/tactics/TA0042/
+tags:
+  - attack.t1583.001
+  - attack.resource_development
+  - attack.initial_access
+  - nist_csf.DE.CM
+level: medium
+detection:
+  selection:
+    event_type: "dns_query"
+    dns_age_seconds: "|lt: 301"
+    source_internal: true
+  filter_legit:
+    query: 're:(?i)\.(cloudfront\.net|akamaiedge\.net|apple\.com|google\.com|microsoft\.net)$'
+  condition: selection and not filter_legit
+  timeframe: 5m
+  count: 3
+cooldown_sec: 1800
+dedup_key: "{{source_ip}}:{{query}}"

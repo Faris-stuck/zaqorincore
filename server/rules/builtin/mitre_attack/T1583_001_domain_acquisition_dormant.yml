@@ -1,0 +1,47 @@
+title: T1583.001 — Dormant domain reactivation (90+ day gap then burst)
+id: 5d2f8a91-6b3e-4c7d-9a1f-2e4b8c3d6fa4
+description: |
+  Detects a previously dormant domain that suddenly receives a burst
+  of queries. The domain must have had no observed DNS traffic for
+  >= 90 days, then accumulates >= 10 queries within a 60-second window
+  after reactivation.
+
+  Dormancy is tracked by zeek_dns via the dns_last_seen_days metadata
+  field. Reactivation is signaled by the collector setting
+  dns_reactivation_burst: true when the current event falls inside a
+  reactivation window.
+
+  Multi-signal correlation:
+    - Domain dormant period >= 90 days.
+    - Burst: >= 10 queries in 60 seconds from a single host.
+
+  Whitelisted:
+    - CDN / captive / monitoring tagged infrastructure (single
+      combined regex alternation, per engine constraints).
+
+  Promotion: experimental.
+author: ZaQorinCore Detection Pack
+date: 2026-09-03
+modified: 2026-09-03
+promotion: experimental
+references:
+  - https://attack.mitre.org/techniques/T1583/001/
+  - https://attack.mitre.org/techniques/T1568/
+tags:
+  - attack.t1583.001
+  - attack.resource_development
+  - attack.command_and_control
+  - nist_csf.DE.CM
+level: medium
+detection:
+  selection:
+    event_type: "dns_query"
+    dns_last_seen_days: "|ge: 90"
+    dns_reactivation_burst: true
+  filter_legit:
+    query: 're:(?i)\.(cloudfront\.net|akamaiedge\.net|apple\.com|google\.com|microsoft\.net)$'
+  condition: selection and not filter_legit
+  timeframe: 60s
+  count: 10
+cooldown_sec: 7200
+dedup_key: "{{source_ip}}:{{query}}"

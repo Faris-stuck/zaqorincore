@@ -1,0 +1,57 @@
+title: T1583.001 — Internal host POST to domain registration endpoint
+id: 5d2f8a91-6b3e-4c7d-9a1f-2e4b8c3d6fa5
+description: |
+  Detects an internal host issuing an HTTP POST to a domain
+  registrar's /register or /create endpoint with an unknown or
+  uncategorized user-agent. This indicates the host may be performing
+  adversary resource development: registering infrastructure for
+  phishing, C2 staging, or disposable command hosts.
+
+  Multi-signal correlation:
+    - HTTP method = POST.
+    - URI path matches /register or /create (regex anchored).
+    - User-Agent is NOT in the known-registrar-bot allowlist
+      (curl, python-requests, Go-http-client, Apache-HttpClient,
+      GitHub-Actions CI).
+    - Source is internal.
+
+  Whitelist (single filter block, per engine constraints):
+    - Known automation tool user-agents. Captive/CDN hosts that
+      legitimately hit /register are extremely unlikely; if noise
+      appears, operators can extend the user-agent allowlist or
+      tag the host via source_tag in the collector.
+
+  Promotion: experimental.
+author: ZaQorinCore Detection Pack
+date: 2026-09-03
+modified: 2026-09-03
+promotion: experimental
+references:
+  - https://attack.mitre.org/techniques/T1583/001/
+  - https://attack.mitre.org/techniques/T1071/001/
+tags:
+  - attack.t1583.001
+  - attack.resource_development
+  - attack.command_and_control
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "http_request"
+    method: "POST"
+    source_internal: true
+    uri: 're:(?i)/(register|create)$'
+  filter_known_ua:
+    user_agent: "|startswith: curl/"
+  condition: selection and not filter_known_ua
+  timeframe: 30m
+  count: 1
+cooldown_sec: 7200
+dedup_key: "{{source_ip}}:{{host}}"
+
+# NOTE: the ZaqorinCore Sigma engine supports a single filter block per
+# rule and a list of startswith values via repeated keys is not parsed
+# by the current loader. Operators who want the multi-UA allowlist
+# should extend by stamping source_tag=dev for CI hosts or by adding a
+# follow-up rule per UA family. The CI user-agent check is preserved
+# in the rule description above so the intent stays documented.

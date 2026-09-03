@@ -1,0 +1,59 @@
+title: T1583.001 — Brand typosquat domain resolution (Levenshtein 1-2)
+id: 5d2f8a91-6b3e-4c7d-9a1f-2e4b8c3d6fa3
+description: |
+  Detects DNS resolution of domains that are Levenshtein distance 1
+  or 2 from a protected brand, with second-level length within +/- 3
+  characters of the brand's SLD. This catches homograph and typo-
+  squat registrations targeting phishing victims.
+
+  Default brand list (configurable via ZAQORIN_PROTECTED_BRANDS env
+  var):
+    - komatsu.co.id
+    - microsoft.com
+    - google.com
+
+  The actual Levenshtein comparison runs server-side via
+  zaqorincore_server.detection.brand_protection.check_typosquat,
+  which sets three metadata flags on the event:
+    - typosquat_brand: bool        (matched one of the protected SLDs)
+    - typosquat_distance: int      (the computed edit distance)
+    - typosquat_is_legitimate: bool (True iff the registrant IS the brand)
+
+  Whitelist (single filter block, per engine constraints):
+    - The matched brand IS the legitimate registrant
+      (typosquat_is_legitimate == true). The brand_protection stage
+      stamps this flag when the observed SLD exactly equals one of
+      the protected SLDs, so the legitimate microsoft.com queries
+      are silenced while homographs like mlcrosoft.com still fire.
+
+  Note: CDN / captive-portal hosts that happen to be a typosquat of
+  a protected brand (extremely unlikely) are NOT separately
+  excluded here. Operators who see noise from such overlap should
+  add the CDN SLD to the protected brand list as a brand entry.
+
+  Promotion: experimental.
+author: ZaQorinCore Detection Pack
+date: 2026-09-03
+modified: 2026-09-03
+promotion: experimental
+references:
+  - https://attack.mitre.org/techniques/T1583/001/
+  - https://attack.mitre.org/techniques/T1656/
+tags:
+  - attack.t1583.001
+  - attack.resource_development
+  - typosquat
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "dns_query"
+    typosquat_brand: true
+    typosquat_distance: "|lt: 3"
+  filter_legit_brand:
+    typosquat_is_legitimate: true
+  condition: selection and not filter_legit_brand
+  timeframe: 1h
+  count: 1
+cooldown_sec: 3600
+dedup_key: "{{source_ip}}:{{query}}"

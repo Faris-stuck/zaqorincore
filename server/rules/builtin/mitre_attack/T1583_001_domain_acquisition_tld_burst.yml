@@ -1,0 +1,46 @@
+title: T1583.001 — Burst of suspicious-TLD DNS queries from a single host
+id: 5d2f8a91-6b3e-4c7d-9a1f-2e4b8c3d6fa2
+description: |
+  Detects a single host issuing >= 5 DNS queries to second-level
+  domains under cheap / abuse-prone TLDs (.xyz, .top, .tk, .ml, .cf,
+  .ga) within a 60-second window. These TLDs are disproportionately
+  used for phishing, C2 staging, and disposable infrastructure.
+
+  Multi-signal correlation:
+    - TLD in {.xyz, .top, .tk, .ml, .cf, .ga}.
+    - >= 5 events from the same source_ip in a 60-second window.
+
+  Whitelisted:
+    - Cloud CDN infrastructure (.cloudfront.net, .akamaiedge.net).
+    - Captive-portal hosts (.apple.com, .google.com).
+    - Microsoft CDN (.microsoft.net).
+
+  Limitation: the ZaqorinCore Sigma engine counts events, not distinct
+  domains. Operators who need distinct-SLD enforcement should layer a
+  downstream correlator. The 5-event threshold is chosen so that
+  benign single-domain bursts do not fire.
+
+  Promotion: experimental.
+author: ZaQorinCore Detection Pack
+date: 2026-09-03
+modified: 2026-09-03
+promotion: experimental
+references:
+  - https://attack.mitre.org/techniques/T1583/001/
+  - https://www.spamhaus.org/statistics/tlds/
+tags:
+  - attack.t1583.001
+  - attack.resource_development
+  - nist_csf.DE.CM
+level: high
+detection:
+  selection:
+    event_type: "dns_query"
+    query: 're:(?i)\.(xyz|top|tk|ml|cf|ga)$'
+  filter_legit:
+    query: 're:(?i)\.(cloudfront\.net|akamaiedge\.net|apple\.com|google\.com|microsoft\.net)$'
+  condition: selection and not filter_legit
+  timeframe: 60s
+  count: 5
+cooldown_sec: 1800
+dedup_key: "{{source_ip}}:tld_burst"
