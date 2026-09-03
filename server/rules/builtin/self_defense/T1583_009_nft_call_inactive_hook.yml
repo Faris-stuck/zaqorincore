@@ -1,0 +1,48 @@
+title: T1583.009 — nft.call inactive hook (CWE-1188)
+id: 8bce205b-8f74-4cf9-ad46-ad41a5ffb560
+status: experimental
+description: |
+  Detects an nftables call that references a hook function which is
+  registered with the operator but never actually invoked — e.g. an
+  attacker's postrouting rule whose hook chain was disabled by the
+  operator but still sits in the rule-set. The dormant rule is waiting
+  for the hook chain to be reactivated, at which point it would fire
+  silently. This is a resource-development foothold (CWE-1188
+  Insecure Default Initialization of Resource) where an attacker has
+  planted a sleeper that activates under a future configuration change.
+
+  The engine pre-computes `inactive_hook: true` on the event when the
+  referenced hook chain is disabled in the current rule-set, so this
+  rule stays a single-event Sigma rule (matches ADR-010 condition
+  patterns).
+
+  Maps to F-5 from AUDIT-2026-09-03 (Acquired Infrastructure — operator
+  rule-set divergence).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+  - cwe.1188
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_inactive_hook:
+    inactive_hook: false
+  condition: selection and not filter_inactive_hook
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+  - hook_name
+falsepositives:
+  - Operator disabled hooks
+level: high
