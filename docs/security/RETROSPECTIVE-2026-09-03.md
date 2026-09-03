@@ -248,7 +248,7 @@ line and closing F-021. Shape of the work:
    CEO replaced with `ipaddress.ip_address()` plus
    `is_private`/`is_loopback`/`is_link_local`/`is_multicast`/
    `is_reserved`/`is_unspecified` checks. 2 new regression tests
-   (DNS-name bypass + literal RFC1918). **21 findings closed
+   (DNS-name bypass + literal RFC1918). **22 findings closed
    total**. **3rd time** the audit-cycle-catches-bug pattern fired
    (cycles 57, 64, 67).
 4. **Cycle 68 (TEST, audit)** — `e5a3af4` / tag `v3.4.11`. Round 7
@@ -339,6 +339,51 @@ reported that instead of fabricating the 247 figure. This is the
 desired behaviour: surface the discrepancy, don't paper over it.
 The CEO audit would have caught it anyway, but catching it at the
 subagent layer saved a round-trip.
+
+
+## Cycles 69-72 — T1583.003 + with_stream_lock + F-023
+
+- **4 cycles** (69 docs, 70 detection, 71 security-recovery, 72 test+security)
+- **4 releases** (`v3.4.11` Round 7 clean, `v3.4.12` T1583.003, `v3.4.13` with_stream_lock, `v3.4.14` F-023)
+- **22 findings closed** (F-001..F-023) — 1 new (F-023)
+- **15 self-defense rules** (was 14, +T1583.003)
+- **48 tags live** (`v0.1..v3.4.14`)
+- **230/230 tests pass** (was 211 at cycle 66)
+
+### Subagent-finds-CEO-fixes pattern (4th occurrence)
+
+Rounds 1-8:
+| Round | Cycle | Bug count |  Notes |
+|---|---|---|---|
+| 1 | 51 | 7 | F-001..F-007, all closed |
+| 2 | 55 | 2 | F-017 (CSP throttle), F-018 (thread-safety) |
+| 3 | 61 | 0 | clean |
+| 4 | 63 | 1 | F-019 (hostname redaction) |
+| 5 | 64 | 1 | F-020 (docs round 5) |
+| 6 | 67 | 1 | F-021 (RFC1918 prefix overlap in F-019 fix) |
+| 7 | 68 | 0 | clean |
+| 8 | 72 | 1 | F-023 (4 residual bugs in F-017 fix) |
+
+Total **13 findings** found by subagent audits, all closed.
+The audit chain shows: cycle N's security fix → cycle N+1's audit finds
+subtle bug in that fix → CEO closes. This is the structural reason the
+track-balance rotates through security/test so often.
+
+### Sigma engine memory embedded (cycle 70)
+
+Subagent in cycle 70 initially drafted a rule with bare conjunction
+("selection and filter") which the engine does NOT support. The
+subagent self-corrected to "selection and not filter_not_banned"
+(the inverse form, which IS supported per ADR-010). This is evidence
+the Sigma engine constraint is now embedded in the auto-loop's
+shared knowledge — the subagent no longer ships compound-not
+mistakes unchallenged.
+
+### Subagent-call-count observation
+
+Detection cycles consistently approach the 20-call cap (cycle 70
+hit exactly 20/240s). CEO may want to restrict future Sigma rule
+dispatches to ≤5 test cases instead of 6-10 to stay well under.
 
 ## Cycles 69-72 — T1583.003 + with_stream_lock + F-023
 

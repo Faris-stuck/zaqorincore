@@ -11,6 +11,14 @@ In-flight work for v3.5.0. No breaking changes planned; no
 `**BREAKING**` items. See `docs/security/AUDIT-2026-09-03.md` for
 the current round-by-round audit history.
 
+## [3.4.14] - 2026-09-03
+
+### Security
+
+- **F-023 closed** — 4 residual bugs in csp_violation_reporter.py (F-017 fix surface): TOCTOU throttle race, unbounded IP dict, no body cap, throttled-path emit amplified F-008. All 4 fixed.
+- 230/230 tests pass (was 223, +7 new regression tests).
+- 22 findings closed total (F-001..F-023).
+
 ## [3.4.13] - 2026-09-03
 
 ### Security
