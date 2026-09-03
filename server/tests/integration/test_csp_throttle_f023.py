@@ -180,6 +180,31 @@ def test_body_size_cap_allows_legitimate(client):
     assert r.status_code == 204
 
 
+def test_chunked_transfer_rejected(client):
+    """F-024: Transfer-Encoding: chunked is rejected with 411.
+
+    Browsers never chunk CSP reports, so this is a strong
+    indicator of either a misconfigured client or an attacker
+    trying to bypass the Content-Length cap.
+    """
+    os.environ["ZAQORIN_SRC_IP_HEADER"] = "X-Forwarded-For"
+    body = {
+        "csp-report": {
+            "document-uri": "https://app.example.test/",
+            "violated-directive": "script-src",
+        }
+    }
+    r = client.post(
+        "/api/v1/_csp-report",
+        json=body,
+        headers={
+            "x-forwarded-for": "10.0.0.7",
+            "transfer-encoding": "chunked",
+        },
+    )
+    assert r.status_code == 411, f"expected 411, got {r.status_code}"
+
+
 def test_throttled_does_not_emit_event(client):
     """F-023 #4: throttled requests must NOT call emit().
 

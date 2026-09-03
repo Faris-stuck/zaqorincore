@@ -166,10 +166,19 @@ async def receive_csp_report(
     ``ZaqorinEvent`` and pushed into the in-process stream so the
     Sigma engine can correlate it against T1505.003 / T1505.004.
     """
-    # F-023: cap body size. The Content-Length header is a hint
-    # (it can be missing or wrong) but it's the cheapest check; the
-    # 16 KiB cap is well above the legitimate ≤8 KiB browser reports
-    # so no false positives are expected.
+    # F-023: cap body size. Browsers always send a small fixed body
+    # for CSP reports (≤8 KiB), so legitimate clients can never
+    # legitimately use chunked transfer encoding here.
+    #
+    # F-024: reject Transfer-Encoding: chunked outright, since
+    # chunked bodies bypass the Content-Length-only cap. Browsers
+    # do not chunk CSP reports; non-browser clients (curl, Go
+    # http.Client) usually set Content-Length. The chunked header
+    # is therefore a strong signal of either a misconfigured client
+    # or an attacker trying to stream an unbounded body.
+    te = request.headers.get("transfer-encoding", "").lower()
+    if "chunked" in te:
+        return FastAPIRawResponse(status_code=411, content=b"")
     cl = request.headers.get("content-length")
     if cl is not None:
         try:
