@@ -1,0 +1,49 @@
+title: T1583.004 — nft.call from unauthorized actor (binary not in runtime allowlist)
+id: cc3a4138-a9e2-43e3-8584-3f66d729ad20
+status: experimental
+description: |
+  Detects an nftables call issued by a process whose binary hash is
+  not in the operator's runtime allowlist. The runner projects an
+  `actor_authorized` metadata flag onto every nft.call event by
+  hashing the invoking binary against the operator's curated
+  allowlist; this rule stays a single-event Sigma rule and matches
+  the engine's supported condition patterns (ADR-010).
+
+  An unauthorized actor means the agent's nftables is being driven by
+  a binary the operator did not expect — a post-exploit pivot, a
+  supply-chain compromise, or a rogue service that has elevated to
+  netadmin. A legitimate operator rolls out new binaries through
+  the deployment pipeline and updates the allowlist; an
+  unauthorized binary reaching nftables is an immediate red flag.
+
+  Maps to F-6 from AUDIT-2026-09-03 (Acquired Infrastructure —
+  pivot via unexpected netadmin binary).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_actor_authorized:
+    actor_authorized: true
+  condition: selection and not filter_actor_authorized
+fields:
+  - src_ip
+  - agent_id
+  - actor_binary
+  - actor_binary_hash
+  - target_table
+  - target_chain
+falsepositives:
+  - Operator rolling out a new binary and racing the allowlist update
+  - Custom third-party tooling the operator has forgotten to add to the allowlist
+level: high
