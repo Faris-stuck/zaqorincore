@@ -316,9 +316,21 @@ def parse_rule_file(path: Path) -> list[CompiledSigmaRule]:
         with path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise SigmaRuleLoadError(path, f"invalid YAML: {e}") from e
+        # F-026: don't leak rule-file source via PyYAML's default error
+        # formatter (which includes a snippet of the offending line). Log
+        # only the structured position info (line, column) and the problem
+        # mark; the full source fragment stays in the exception chain
+        # for in-process introspection but is not formatted into the
+        # operator-facing message.
+        problem = getattr(e, "problem_mark", None)
+        if problem is not None:
+            loc = f"line {problem.line + 1}, column {problem.column + 1}"
+        else:
+            loc = "unknown position"
+        raise SigmaRuleLoadError(path, f"invalid YAML at {loc}") from e
     except OSError as e:
-        raise SigmaRuleLoadError(path, f"cannot read: {e}") from e
+        # F-026: same hygiene — don't surface the OSError's full str.
+        raise SigmaRuleLoadError(path, f"cannot read: {type(e).__name__}") from e
     if data is None:
         return []
     rules_data = data if isinstance(data, list) else [data]
