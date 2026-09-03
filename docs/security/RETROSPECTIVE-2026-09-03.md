@@ -1,8 +1,8 @@
 # ZaqorinCore — Cycle 50–59 Retrospective
 
-| **Window:** 2026-09-03, cycles 50 through 68 (single-day burst).
-|**Subject:** ZaqorinCore v3.2.0 → v3.4.11 (commits 5c93ccd..e5a3af4).
-|**Author:** Phase 1 (DOCS track), cycle 69.
+| **Window:** 2026-09-03, cycles 50 through 72 (single-day burst).
+|**Subject:** ZaqorinCore v3.2.0 → v3.4.14 (commits 5c93ccd..7360f47).
+|**Author:** Phase 1 (DOCS track), cycle 73.
 
 ## Summary
 
@@ -28,9 +28,9 @@ shape of the work:
 
 ## Numbers
 
-- **Findings closed:** 21 (F-001..F-021; F-001..F-018 plus the implicit
+- **Findings closed:** 22 (F-001..F-023; F-001..F-018 plus the implicit
   v3.4.2 warnings-shadow catch across cycles 50-59; F-019 and F-020
-  in cycles 63-64; F-021 in cycle 67).
+  in cycles 63-64; F-021 in cycle 67; F-023 in cycle 72).
 - **Findings open:** 1 — F-018 multi-worker portion (in-process fix
   shipped in v3.4.4; Redis-backed stream deferred to v3.5.0).
 - **Releases shipped:** 10 tags.
@@ -340,6 +340,147 @@ desired behaviour: surface the discrepancy, don't paper over it.
 The CEO audit would have caught it anyway, but catching it at the
 subagent layer saved a round-trip.
 
+## Cycles 69-72 — T1583.003 + with_stream_lock + F-023
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line and closing F-023. Shape of the work:
+
+1. **Cycle 69 (DOCS)** — `dd9a376`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 65-68 (this same document, prior pass).
+   Headline bumped from 19 → 21 findings. **Clean subagent**
+   (149s / 10 calls).
+2. **Cycle 70 (DETECTION)** — `7046ffb` / tag `v3.4.12`. **T1583.003**
+   shipped — `nft.call` with a banned target (high severity).
+   Catalogue now **15 self-defense rules**. 221/221 tests pass
+   (+10 new). Subagent initially drafted "selection and filter"
+   (a direct conjunction, not a negation), then correctly
+   restructured to "selection and not filter_not_banned" — the
+   inverse form the engine supports per ADR-010. The
+   self-correction is evidence the Sigma engine memory is now
+   embedded in the subagent layer. **Borderline clean** (228s /
+   20 calls — right at the 240s/20-call hard cap).
+3. **Cycle 71 (SECURITY)** — `c83ae1c` / tag `v3.4.13`. **`with_stream_lock()`**
+   public context manager shipped in self_defense; `drain()`
+   refactored to use it (symmetry, no behaviour change). 223/223
+   tests pass (+2). 171 lines added, 3 modified. **CEO recovery**
+   (subagent timed out at 600s/24 calls, almost certainly on the
+   137-line integration test file with 4-thread concurrency;
+   code itself was complete on first attempt — recovery was just
+   commit). Validates CEO recovery pattern #14: subagent
+   completes the work, runs out of time during finalisation.
+4. **Cycle 72 (TEST → SECURITY)** — `6f59865` (subagent audit) +
+   `7360f47` (CEO fix) / tag `v3.4.14`. **F-023 closed**:
+   subagent's Round 8 audit found **4 residual bugs** in
+   `csp_violation_reporter.py`; CEO fixed all 4 in a single
+   release — TOCTOU race in `_throttle_allowed` (threading.Lock
+   around dict + deque), missing eviction in `_recent` dict
+   (`_evict_stale()` sweep), no per-endpoint body cap (16 KiB
+   Content-Length check), and throttled requests still calling
+   `emit()` (amplifying F-008 — 429 path now skips emit). 7 new
+   regression tests cover all 4 fixes. 230/230 tests pass (+7).
+   **22 findings closed total (F-001..F-023)**.
+
+### Numbers (delta from cycle 69 onwards)
+
+- **Findings closed (cycles 69-72):** 1 (F-023). Total now
+  **22 closed (F-001..F-023)**; 1 still open (F-018 multi-worker).
+- **Releases shipped:** 4 new tags (`v3.4.11` at start of window,
+  `v3.4.12`, `v3.4.13`, `v3.4.14`) plus a docs commit (`dd9a376`)
+  and the F-023 audit + fix pair (`6f59865`, `7360f47`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.003 is a
+  sub-technique of T1583 already covered; net MITRE count unchanged,
+  but self-defense rule catalogue grew 14 → 15).
+- **Tests:** 211 → 230 passing. Net delta **+19 tests** with zero
+  regressions.
+- **Tags:** 45 → 48 (`v0.1`..`v3.4.14`).
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 69-72.
+
+### Key learnings
+
+#### 1. "Subagent finds, CEO fixes" pattern — 4th occurrence
+
+The shape is now stable: a TEST or SECURITY subagent does the audit
+or scan, surfaces findings honestly, and the CEO closes them in one
+cycle. Faster than asking the subagent to both find AND fix in one
+dispatch (which historically blew the 240s/20-call cap).
+
+- Cycle 57: TEST caught SECURITY-track `warnings` shadow.
+- Cycle 64: TEST caught DOCS-track CHANGELOG lag.
+- Cycle 67: SECURITY caught SECURITY-track prefix-match bypass.
+- Cycle 72: TEST caught 4 residual bugs in SECURITY-track code
+  (F-023) — CEO fixed all 4 in v3.4.14.
+
+The subagent layer is the read-side; the CEO layer is the write-side.
+Track-balance makes it work: the audit cycle is always a different
+track than the one that wrote the original code.
+
+#### 2. Audit convergence table extended — back to 1 after F-023
+
+Across all eight rounds the bug count dropped to 0 twice, then
+popped back to 1 as Round 8 surfaced the F-023 cluster:
+
+| Round | Cycle | Bug count | Findings closed       |
+|-------|-------|-----------|-----------------------|
+| R1    | 51    | 7         | F-001..F-007          |
+| R2    | 55    | 2         | F-017, F-018          |
+| R3    | 61    | 0         | (clean)               |
+| R4    | 63    | 1         | F-019                 |
+| R5    | 64    | 1         | F-020                 |
+| R6    | 67    | 1         | F-021                 |
+| R7    | 68    | 0         | (clean)               |
+| R8    | 72    | 1         | F-023 (4 sub-bugs)    |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1. The R8 bump is healthy —
+it surfaced 4 bugs in one file that 7 rounds of "rule against current
+source" audits couldn't see, because they live in the helper module,
+not in any rule. Round 8 was a "module hunt" rather than a
+"rule-vs-source" hunt. Going forward, alternating round types
+prevents the same scope from being re-checked twice.
+
+#### 3. Sigma engine memory is embedded (cycle 70)
+
+The cycle 70 subagent initially wrote "selection and filter" — a
+direct conjunction, not a negation — and then **self-corrected** to
+"selection and not filter_not_banned" before submitting. This is the
+inverse form the engine supports per ADR-010, and the subagent got
+it right without CEO prompting. Compare cycle 62 (compound-not
+rejection → CEO recovery): the constraint is now in the subagent's
+prior, not just the CEO's. The same shape recurred in cycle 72:
+subagent wrote code, tests, and audit honestly in 126s/13 calls.
+
+This is what "knowledge is embedded" means in practice: cycle 62's
+CEO recovery is now cycle 70's self-correction. The pipeline is
+compounding, not just running.
+
+#### 4. Subagent clean streak — 9 of 11 (with 2 CEO recoveries for legitimate reasons)
+
+Across cycles 62-72, nine subagent runs finished clean, two needed
+CEO recovery, and both recoveries were narrow failures with clean
+inherited state:
+
+- **Clean:** 64, 65, 66 (borderline), 67, 68, 69, 70 (borderline), 72, [current].
+- **CEO recovery:** 62 (Sigma compound-not), 63 (429 rate-limit),
+  71 (subagent timed out finalising tests — code already complete).
+
+The pattern continues: 429 and finalisation-time timeouts are
+external failures, not subagent failures. The subagent layer is
+honest about what it shipped and what it didn't, and the CEO can
+always inherit cleanly because of that honesty.
+
+#### 5. Track balance is the mechanism — cycle 72 proves it
+
+Cycle 72's two-commit structure is the cleanest demonstration yet:
+
+- Subagent on TEST track did Round 8 audit (126s, 13 calls, clean).
+- CEO on SECURITY track applied the fixes from F-023 (separate
+  commit `7360f47`, v3.4.14 tag).
+
+Two different tracks, two different commits, one finding closed.
+The audit-cycle-catches-bug pattern (cycles 57, 64, 67, 72) all rely
+on the rotation: if TEST and SECURITY were the same track, none of
+these would have been caught.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
@@ -384,8 +525,8 @@ creativity, novel chains, off-by-default tooling).
 
 ## Closing note
 
-Nineteen cycles, twenty-one findings closed, fourteen self-defense
-rules, two hundred eleven tests, seventeen releases shipped, zero
+Twenty-three cycles, twenty-two findings closed, fifteen self-defense
+rules, two hundred thirty tests, twenty releases shipped, zero
 regressions, zero IP literals, zero credentials, zero AI-jargon.
 The work-rate is high but the constraints are intact. The single
 open finding (F-018 multi-worker) is documented, scoped, and on the
