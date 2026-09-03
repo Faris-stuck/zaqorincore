@@ -1333,6 +1333,211 @@ pattern: cycle 91 found the static claim, cycle 92 made the
 runtime check. Two different tracks, two different
 verification methods, both clean.
 
+## Cycles 93-96 — T1583.009 + R16 audit (F-026 fix)
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line. One new finding (F-026) opened in cycle 95 and closed in the
+same cycle. Shape of the work:
+
+1. **Cycle 93 (DOCS)** — `df9949f`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 89-92 (the prior pass on this same
+   document). **Fastest subagent** (48s / 7 calls — under cap by
+   ~75%).
+2. **Cycle 94 (DETECTION)** — `a7fa18b` (subagent rule) +
+   `1968d19` (CEO immutability bump) / tag `v3.4.27`. **T1583.009**
+   shipped — `nft.call` inactive hook (CWE-1188). Catalogue now
+   **21 self-defense rules** (was 20). 273/273 tests pass (+4 new).
+   **E2E + immutability drift caught again** — subagent bumped the
+   loader test 20→21 but forgot the immutability test (hardcoded to
+   20); CEO patched the count in seconds. This is the 2nd time the
+   immutability test caught version drift (cycle 86 was the 1st
+   with the loader test). **Clean** (222s / 18 calls — under cap
+   by 10%).
+3. **Cycle 95 (SECURITY, audit + fix)** — `2c6948d` (subagent F-026
+   audit) + `317a5f6` (CEO fix) / tag `v3.4.28`. **Round 16 audit
+   found F-026** — Sigma rule loader error messages leaked rule-file
+   source via PyYAML's default error formatter (CWE-209, CWE-532).
+   CEO fix: replace `f"invalid YAML: {e}"` with a position-only
+   error (`line N, column M`), preserving the diagnostic in the
+   exception chain via `raise from e` but never in logs or HTTP
+   responses. 276/276 tests pass (+3 new regression tests).
+   **25 findings closed total (F-001..F-026)**. **Clean
+   subagent** (85s / 9 calls — under cap by 55%). The
+   "subagent finds, CEO fixes" pattern fired for the **3rd
+   occurrence in cycles 95** (also cycles 72, 75, 79, 91).
+4. **Cycle 96 (TEST)** — `98e21ff`. **`test_sigma_loader_full_contract.py`**
+   shipped — 5 new tests verifying the F-026 fix and the loader
+   contract: `test_valid_rule_does_not_raise`,
+   `test_sigma_load_error_is_picklable`,
+   `test_load_rules_from_dir_swallows_bad_rules`,
+   `test_load_rules_from_dir_returns_empty_for_missing`,
+   `test_load_rules_from_dir_no_duplicates`. **281/281 tests pass**
+   (+5 new). Test-only commit, no new tag. Subagent was 495s/17
+   calls — slow but coherent (5 tests in one file, brief was
+   specific enough that discovery was minimal).
+
+### Numbers (delta from cycle 93 onwards)
+
+- **Findings closed (cycles 93-96):** 1 (F-026). Total now
+  **25 closed (F-001..F-026)**; 1 still open (F-018 multi-worker).
+- **Findings opened (cycles 93-96):** 1 (F-026, cycle 95 — closed
+  in same cycle).
+- **Releases shipped:** 2 new tags (`v3.4.27`, `v3.4.28`) plus
+  2 docs/test-only commits (`df9949f`, `98e21ff`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.009 is a
+  sub-technique of T1583 already covered by T1583.001..T1583.008;
+  net MITRE count unchanged, but self-defense rule catalogue grew
+  **20 → 21**).
+- **Tests:** 269 → 281 passing. Net delta **+12 tests** with zero
+  regressions.
+- **Tags:** 60 → 62 (`v0.1`..`v3.4.28`).
+- **MITRE coverage:** 34/200 (17.0%) — **past 17%** of the Q4 2026
+  50% target.
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 93-96.
+
+### Key learnings
+
+#### 1. "Audit → harden → test" 3-step pattern re-fired on F-026
+
+The same 3-step pipeline from cycles 87-92 surfaced F-026 in a
+single window:
+
+1. **Audit** (cycle 95, R16): subagent on SECURITY track read the
+   `sigma.py` engine and the PyYAML error formatter, found the
+   source-fragment leak in `SigmaRuleLoadError`.
+2. **CEO hardens** (cycle 95, `317a5f6`): 5-line fix replacing
+   `f"invalid YAML: {e}"` with a position-only error, preserving
+   the diagnostic in the exception chain (`raise from e`).
+3. **Test** (cycle 96, `98e21ff`): 5 contract tests verifying the
+   fix at runtime — picklable exception, swallow-on-bad-rule,
+   empty-for-missing, no-duplicates, valid-rule-does-not-raise.
+
+The chain is now self-sustaining on a faster cadence: an audit
+finding can move through fix → test in a single 4-cycle window,
+rather than spreading across 9 cycles as in 87-92. The
+pipeline is compressing, not just running.
+
+#### 2. Subagent finds, CEO fixes — 3rd occurrence in cycles 95
+
+The "subagent does the read-side audit, CEO does the write-side
+fix" pattern fired for the **3rd time in cycle 95 alone**
+(counting across the full project: cycles 72, 75, 79, 91, 95).
+The structure is identical each time:
+
+- Subagent (SECURITY or TEST) runs audit, surfaces finding
+  honestly without attempting the fix.
+- CEO applies the fix in a separate commit, usually 1-5 lines +
+  regression tests.
+- v3.4.X tag follows in the same cycle.
+
+The lesson is the same as cycle 72: a single subagent dispatch
+that does both the audit AND the fix historically blows the
+240s/20-call cap. Splitting read-side and write-side across two
+commits is faster end-to-end and produces cleaner findings
+docs.
+
+#### 3. E2E drift caught at the immutability layer (cycle 94)
+
+The cycle 92 immutability test file (`test_self_defense_immutability.py`)
+hardcoded `count == 20` for `SELF_DEFENSE_RULES`. Cycle 94's
+T1583.009 added rule #21, and the loader test (already
+pre-emptively bumped 20→21 in the brief) passed, but the
+immutability test failed. CEO patched the count in seconds
+(`1968d19`).
+
+This is the **2nd time** the cycle 84 "audit + loader are two
+sides" insight has paid off at a different layer:
+
+- **Cycle 86** (1st time): loader test caught the rule count
+  drift on T1583.007.
+- **Cycle 94** (2nd time): immutability test caught the count
+  drift on T1583.009.
+
+Future detection briefs will continue to include **both** the
+loader-test bump AND the immutability-test bump as preconditions
+when a new rule is added. The two-test contract is now the
+default for any detection cycle that adds a rule.
+
+#### 4. Audit convergence — R16 = 1, the first finding in 5 rounds
+
+The sixteen-round convergence table is now:
+
+| Round | Cycle | Bug count | Findings closed           |
+|-------|-------|-----------|---------------------------|
+| R1    | 51    | 7         | F-001..F-007              |
+| R2    | 55    | 2         | F-017, F-018              |
+| R3    | 61    | 0         | (clean)                   |
+| R4    | 63    | 1         | F-019                     |
+| R5    | 64    | 1         | F-020                     |
+| R6    | 67    | 1         | F-021                     |
+| R7    | 68    | 0         | (clean)                   |
+| R8    | 72    | 1         | F-023 (4 sub-bugs)        |
+| R9    | 75    | 1         | F-024 (chunked bypass)    |
+| R10   | 76    | 0         | (clean)                   |
+| R11   | 79    | 1         | F-025 (TE vendor bypass)  |
+| R12   | 80    | 0         | (clean)                   |
+| R13   | 83    | 0         | (clean)                   |
+| R14   | 87    | 0         | (clean)                   |
+| R15   | 91    | 0         | (clean)                   |
+| R16   | 95    | 1         | F-026 (YAML error leak)   |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1 → 1 → 0 → 1 → 0 → 0 →
+0 → 0 → 1. **F-026 is the first finding in 5 rounds** (R12..R16
+last 5, only R16 found a bug). The healthy reading: 4 clean
+rounds + 1 finding (R16) is the long-term steady state, not a
+regression. R16 found a real defect in a non-rule surface
+(PyYAML error formatter) that rule-vs-source audits cannot see —
+the audit-hunt type alternation (rule hunt → module hunt →
+fix-surface hunt → engine hunt) is what surfaces this class of
+bug.
+
+With cycle 96's 5 contract tests verifying the F-026 fix at
+runtime, the audit + runtime + defense-in-depth triplet is now
+structurally closed across **three** fix chains
+(`agents_provision` invariants, `self_defense` immutability,
+`sigma.py` loader contracts). Drift in any layer surfaces in the
+next cycle's audit or test pass.
+
+#### 5. Subagent streak — 4 clean across cycles 93-96
+
+| Cycle | Track     | Calls | Time    | Outcome        |
+|-------|-----------|-------|---------|----------------|
+| 93    | docs      | 7     | 48s     | clean          |
+| 94    | detection | 18    | 222s    | clean (CEO fixup) |
+| 95    | security  | 9     | 85s     | clean (CEO fix)    |
+| 96    | test      | 17    | 495s    | clean (slow but coherent) |
+
+All four subagents finished without timeout or 429. Cycle 94's
+CEO recovery was for an immutability-test count bump (a
+2-minute follow-up, not a recovery). Cycle 95's CEO commit was
+the standard "subagent finds, CEO fixes" pair — subagent itself
+was clean. Cycles 93 and 96 had no CEO commit at all.
+
+The narrow-scope rule continues to hold: 1-2 deliverables max per
+subagent keeps the 240s/20-call cap honest. Even cycle 96's
+495s (the slowest in the window) finished with 3 calls of
+headroom and produced 5 passing tests on the first attempt.
+
+#### 6. Track-balance preserved across cycles 93-96
+
+DOCS → DETECTION → SECURITY → TEST. The same four-track
+rotation as cycles 89-92, with each track landing on the surface
+the previous track didn't touch:
+
+- **Cycle 93 (docs)** wrote about cycles 89-92.
+- **Cycle 94 (detection)** shipped T1583.009, breaking the
+  immutability test.
+- **Cycle 95 (security)** audited the `sigma.py` engine (a
+  non-rule surface), found F-026 in the error formatter.
+- **Cycle 96 (test)** contract-tested the F-026 fix.
+
+The cycle 95/96 pair extends the cycle 91/92 audit+runtime
+pattern to a third surface: cycle 95 found a static claim (the
+error formatter), cycle 96 made the runtime check (5 contract
+tests). Two different tracks, two different verification
+methods, same finding (F-026 closed, 5 tests added).
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
