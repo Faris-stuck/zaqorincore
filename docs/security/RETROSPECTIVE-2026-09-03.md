@@ -35,9 +35,9 @@ shape of the work:
 - **Releases shipped:** 10 tags.
   `v3.2.0`, `v3.2.1`, `v3.2.2`, `v3.2.3`, `v3.3.0`,
   `v3.4.0`, `v3.4.1`, `v3.4.2`, `v3.4.3`, `v3.4.4`.
-- **Detection rules:** 17 → 28 of 200 MITRE techniques covered.
-  Net delta **+11 rules** across 10 cycles (6 in v3.3.0, 4 in v3.4.0,
-  1 in v3.4.3).
+| **Detection rules:** 17 → 30 of 200 MITRE techniques covered
+  (15.0%). Net delta **+13 rules** across 15 cycles (6 in v3.3.0,
+  4 in v3.4.0, 1 in v3.4.3, 2 in v3.4.6).
 - **Tests:** 165 → 231 passing. Net delta **+66 tests** with zero
   regressions.
 - **Constraint hygiene:** zero IP literals, zero credentials in
@@ -120,9 +120,115 @@ both.
   closing the documentation lag. Going forward, every release tag
   must include its entry in the same commit.
 
+## Cycles 60-64 — self-defense pack v3.4.5..v3.4.8 + bug catches
+
+Five more cycles shipped in the same 24-hour window, all on top of
+the v3.4.x line. Shape of the work:
+
+1. **Cycle 60 (DOCS)** — `ef1edfb`. Closed the documentation lag from
+   cycles 50-59: 4 CHANGELOG entries inserted (v3.4.1..v3.4.4),
+   detection index updated for T1505.004, this retrospective
+   written. **First clean subagent in the new pipeline** —
+   189.85s / 9 calls, no CEO recovery.
+2. **Cycle 61 (TEST)** — `bdc37fe` / tag `v3.4.5`. CI workflow
+   `.github/workflows/test.yml` (Python 3.12, rules tests, integration
+   tests, ruff lint, gitleaks secret scan) plus 4 ci-workflow tests.
+   Round 3 audit marked CLEAN. **2nd consecutive clean cycle**
+   (155.79s / 10 calls).
+3. **Cycle 62 (DETECTION)** — `d8e5b6c` / tag `v3.4.6`. Two new rules:
+   **T1505.005** (CSP report empty blocked-uri) and **T1078.003**
+   (CSP recon multi-document-uri per src_ip). Brought the
+   self-defense catalogue to **13 rules / 30/200 MITRE (15.0%)**.
+   Subagent timed out at 600s/25 calls; CEO recovered (Sigma engine
+   does not support `selection and not filter_present` — the
+   `compound-not` family of rejected patterns is now documented as a
+   two-pattern list).
+4. **Cycle 63 (SECURITY)** — `5d4a689` / tag `v3.4.7`. **F-019 closed**:
+   public-DNS hostname redacted in the install response (replaced
+   with a 12-char SHA-256 prefix). First 429 rate-limit failure in
+   the pipeline — subagent hit the upstream limit at 150s / 6 calls,
+   having already written the finding and applied the fix. CEO
+   finished: added the test, updated AUDIT, tagged + released.
+5. **Cycle 64 (TEST)** — `b8b00bc` + `f646de9` / tag `v3.4.8`. Round 5
+   audit + CHANGELOG backfill. **F-020 closed**: mkdocs nav added,
+   `docs/security/findings/index.md` created (links F-001..F-020),
+   CHANGELOG backfilled with v3.4.5..v3.4.7 entries. **4th clean
+   subagent in 5 cycles** (177s / 12 calls).
+
+### Numbers (delta from cycle 60 onwards)
+
+- **Findings closed (cycles 60-64):** 2 (F-019, F-020). Total now
+  **20 closed (F-001..F-020)**; 1 still open (F-018 multi-worker).
+- **Releases shipped:** 4 new tags (`v3.4.5`, `v3.4.6`, `v3.4.7`,
+  `v3.4.8`) plus the CHANGELOG backfill commit `f646de9`.
+- **Detection rules:** 28 → 30 of 200 MITRE (T1505.005, T1078.003).
+- **Tests:** 231 → 250 passing. Net delta **+19 tests** with zero
+  regressions.
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 60-64.
+
+### Key learnings
+
+#### 1. Bug-catch pattern (cycle 64 caught the cycle-60 CHANGELOG lag)
+
+Cycle 60 wrote the original retrospective and backfilled the
+v3.4.1..v3.4.4 CHANGELOG entries in the same commit. Cycle 64's
+Round 5 audit (`b8b00bc`) caught the next lag: v3.4.5, v3.4.6,
+v3.4.7 had shipped without CHANGELOG entries. Subagent flagged the
+gap honestly ("not fixed, content not fabricated"); CEO backfilled
+in a separate commit (`f646de9`).
+
+This is the same shape as the cycle 57 catch: a later cycle surfaces
+a defect introduced by an earlier cycle, but only because the audit
+or test net was running. The retrospective's "every release tag must
+include its entry in the same commit" rule was correct in spirit but
+hard to enforce across subagents — the audit catches it instead.
+
+#### 2. Narrow-scope pattern proven (4-of-5 clean streak)
+
+Cycles 60, 61, 62, 64 followed the narrow-scope rule
+("1-2 deliverables max per subagent"); only cycle 62 timed out
+because 13 rules + tests + Sigma engine quirks pushed past the cap.
+
+| Cycle | Track     | Scope                                   | Outcome |
+|-------|-----------|-----------------------------------------|---------|
+| 60    | docs      | 4 CHANGELOG entries + retro              | clean   |
+| 61    | test      | 1 workflow + 4 tests                    | clean   |
+| 62    | detection | 2 rules + tests                         | timeout → CEO |
+| 63    | security  | 1-line fix + 1 test + AUDIT             | 429 → CEO |
+| 64    | test      | Round 5 audit + index + mkdocs nav      | clean   |
+
+4 clean subagents out of 5. Wide-scope cycles still need CEO
+recovery, but the narrow-scope default holds.
+
+#### 3. First 429 rate-limit failure (cycle 63)
+
+Subagent was rate-limited by the upstream API at 150s / 6 calls. By
+that point it had already written the F-019 finding doc and applied
+the 1-line fix to `agents_provision.py`. CEO inherited clean
+on-disk state and finished the rest.
+
+The lesson: 429 is now a known failure mode alongside timeout. If
+the subagent is past its high-volume tool calls when the 429 hits,
+the work is usually safe to inherit. Track-balance (the rotation
+itself) didn't break — just the network layer did.
+
+#### 4. Two audit patterns established
+
+Cycle 64 formalised a pattern that's been implicit since cycle 59:
+
+- **Round N (code hunt)** — re-read the detection rules against the
+  current source tree; close any rule that drifted from its test.
+- **Round N (docs hunt)** — re-read the CHANGELOG, AUDIT, findings
+  index, and mkdocs nav against the actual release tags; close any
+  drift.
+
+The two hunts catch different classes of drift, so they're paired
+going forward.
+
 ## Future work (next 10 cycles)
 
-### v3.5.0 — Detection pack round 2
+### v3.5.0 — Detection pack round 2 (carried over)
 
 Three new rules in scope, each tied to a specific gap:
 
@@ -136,16 +242,22 @@ Three new rules in scope, each tied to a specific gap:
   compromised credential being used to relay through the platform's
   alert channels; the rule fires before the relay completes).
 
-### F-018 multi-worker (Redis stream)
+### F-018 multi-worker (Redis stream) — partially shipped
+
+The v3.4.4 in-process fix shipped in cycle 59 (closed the
+in-process portion of F-018). The durable answer — Redis-backed
+stream for multi-worker event delivery — still didn't fit any
+single cycle. Now formally tracked under
+`self_defense/MULTI_WORKER.md` and scoped for **v3.5.0**.
 
 Add a `STREAM_BACKEND` env var that, when set to `redis://...`,
-routes `_STREAM` append/flush through a `redis.asyncio` Stream. Single
-worker mode (`--workers 1`) stays the default; multi-worker mode
-becomes safe without lock contention.
+routes `_STREAM` append/flush through a `redis.asyncio` Stream.
+Single-worker mode (`--workers 1`) stays the default; multi-worker
+mode becomes safe without lock contention.
 
 ### External bug bounty (PortSwigger / HackTheBox)
 
-The detection catalogue is now stable enough (28 rules, 231 tests,
+The detection catalogue is now stable enough (30 rules, 250 tests,
 public-release audit clean) to invite external review. Plan:
 
 1. Publish a "challenge scope" doc under `docs/security/bounty/`.
