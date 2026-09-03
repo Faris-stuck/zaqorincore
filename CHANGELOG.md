@@ -374,3 +374,21 @@ worker keeps its own `_STREAM`. Mitigation options are documented in
 - No credentials.
 - No AI-jargon.
 - Public-release audit clean.
+
+## [3.4.31] - 2026-09-04
+
+### Security
+
+- **F-030 closed** - defence-in-depth. The remaining three `json.loads` call sites (`evidence.py:244`, `api/v1/evidence.py:108`, `error_envelope.py:211`) now use `safe_loads` from `utils.depth_json`. None of these sites accept untrusted external input directly, but each runs in a request path and parses JSON, so the same depth-limited primitive is applied for consistency. `grep -rn "json.loads" server/src/` now returns zero hits outside `utils/depth_json.py`.
+
+### Tests
+
+- 23/23 prior tests still pass (8 F-027 + 7 F-028 + 8 F-029).
+- No new test file for F-030; the helper is already covered by the F-027 / F-028 / F-029 test files.
+
+### Constraints honored
+
+- No IP addresses.
+- No credentials.
+- No AI-jargon.
+- Public-release audit clean.

@@ -98,6 +98,10 @@ import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+# F-030: depth-limited JSON parse for upstream error bodies. Cheap
+# defence-in-depth in case the upstream returns a deeply-nested
+# JSON error document.
+from .utils.depth_json import safe_loads
 
 # ``request_id`` is bound by RequestIDMiddleware for the lifetime of
 # every request. Reading it from contextvars keeps the envelope in
@@ -208,7 +212,7 @@ def _extract_detail(body: bytes, content_type: str) -> str:
         return ""
     if "json" in content_type.lower():
         try:
-            parsed = json.loads(body)
+            parsed = safe_loads(body.decode("utf-8", errors="replace"))
         except (ValueError, json.JSONDecodeError):
             return body.decode("utf-8", errors="replace")
         if isinstance(parsed, dict):

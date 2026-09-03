@@ -17,6 +17,10 @@ from pydantic import BaseModel
 
 from ...evidence import EvidenceStore, EvidenceSubmit
 from ...security import require_api_key
+# F-030: depth-limited JSON parse for the sidecar metadata read.
+# The sidecar is operator-controlled on disk, but defence in
+# depth is cheap.
+from ...utils.depth_json import safe_loads
 
 
 router = APIRouter(
@@ -105,7 +109,7 @@ async def get_sidecar(alert_id: str) -> dict:
     sidecar_path = _STORE._alert_dir(alert_id) / "bundle.coc.json"
     if not sidecar_path.exists():
         raise HTTPException(status_code=404, detail="not found")
-    return json.loads(sidecar_path.read_text())
+    return safe_loads(sidecar_path.read_text())
 
 
 __all__ = ["router"]

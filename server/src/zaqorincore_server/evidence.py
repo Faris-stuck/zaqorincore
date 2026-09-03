@@ -48,6 +48,11 @@ from typing import Any, BinaryIO
 
 from pydantic import BaseModel, Field, field_validator
 
+# F-030: depth-limited JSON parse for the chain-of-custody sidecar.
+# The sidecar is operator-controlled on disk, but defence in depth
+# is cheap and consistent with the F-027 / F-028 / F-029 family.
+from .utils.depth_json import safe_loads
+
 
 class EvidenceSubmit(BaseModel):
     """Payload the agent sends with the captured tarball."""
@@ -240,8 +245,12 @@ class EvidenceStore:
         sig = sig_path.read_text()
         # Try the key the sidecar was signed with first, then
         # fall through to the rotation history.
+        # F-030: depth-limited JSON parse for the sidecar.
+        # The sidecar is operator-controlled on disk, but the
+        # decode is in the request path of ``verify()`` so defence
+        # in depth is cheap.
         try:
-            sidecar = json.loads(sidecar_bytes)
+            sidecar = safe_loads(sidecar_bytes.decode("utf-8", errors="replace"))
             key_id = sidecar.get("key_id", "current")
             if key_id in self.keys:
                 if hmac.compare_digest(

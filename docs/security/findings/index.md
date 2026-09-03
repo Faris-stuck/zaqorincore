@@ -95,6 +95,7 @@ that was added to `ingest_cloudflare.py` for F-027; documented as F-028.
 | [F-027](F-027-cloudflare-json-depth-dos.md) | Low | Cloudflare Logpush: NDJSON lines unbounded nesting depth → parser DoS | **Closed in v3.4.29** (`_depth_decoder` in `ingest_cloudflare.py`) |
 | [F-028](F-028-webhook-json-depth-dos.md) | Low | `/api/v1/ingest/webhook` uses raw `json.loads` with no nesting-depth cap (F-027 sibling) | **Closed in v3.4.30** (`safe_loads` from `utils.depth_json`) |
 | [F-029](F-029-ws-hello-uncapped.md) | Medium | WebSocket HELLO frame uncapped + `json.loads` unbounded depth (F-009 residual) | **Closed in v3.4.30** (HELLO cap + `safe_loads`) |
+| [F-030](F-030-server-wide-json-depth-audit.md) | Low | Server-wide audit: 3 residual `json.loads` call sites in `evidence.py`, `api/v1/evidence.py`, `error_envelope.py` (defence-in-depth) | **Closed in v3.4.31** (all sites use `safe_loads`) |
 
 ## Round 3 (cycle 61) — clean
 
