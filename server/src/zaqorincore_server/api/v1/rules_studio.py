@@ -68,6 +68,31 @@ _SERVER_ROOT = Path(__file__).resolve().parents[4]
 _BUILTIN_DIR = _SERVER_ROOT / "rules" / "builtin"
 _CUSTOM_DIR = _SERVER_ROOT / "rules" / "custom"
 
+# F-031: rule_id is operator-supplied and fed straight into
+# ``base / f"{rule_id}.yml"`` — without validation a value like
+# ``../../etc/passwd`` resolves outside the rules directory.
+# Constrain to a safe alphabet (lowercase/uppercase letters, digits,
+# underscore, hyphen, dot) up to 64 chars. Sigma rule ids in the
+# wild fit this pattern (snake_case or kebab-case).
+_RULE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+
+
+def _validate_rule_id(rule_id: str) -> str:
+    """Reject rule_ids that would escape ``_resolve_path``.
+
+    Raises HTTPException(400) for any character outside the safe
+    alphabet or any length outside [1, 64].
+    """
+    if not isinstance(rule_id, str) or not _RULE_ID_PATTERN.match(rule_id):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "rule_id must match [A-Za-z0-9_.-]{1,64}; "
+                "path traversal characters are not allowed"
+            ),
+        )
+    return rule_id
+
 
 def _ensure_custom_dir() -> Path:
     """Create the custom rules directory if it doesn't exist.
@@ -326,7 +351,13 @@ def _list_rules() -> list[RuleSummary]:
 
 def _read_rule_detail(rule_id: str) -> tuple[str, dict[str, Any], str]:
     """Find the rule by id (custom first, then builtin) and return
-    ``(yaml_text, parsed_dict, source)``. Raises 404 if missing."""
+    ``(yaml_text, parsed_dict, source)``. Raises 404 if missing.
+
+    F-031: validate the rule_id before any filesystem path is
+    constructed. A caller-supplied ``../foo`` would otherwise
+    resolve outside the rules directory.
+    """
+    _validate_rule_id(rule_id)
     for source, directory in (
         ("custom", _ensure_custom_dir()),
         ("builtin", _BUILTIN_DIR),
@@ -607,6 +638,7 @@ def _atomic_write_then_load(target: Path, yaml_text: str) -> Path:
 async def update_rule(rule_id: str, body: RuleUpdateIn) -> RuleDetail:
     """Overwrite an existing custom rule. Built-ins cannot be
     updated in place — operators must fork them into custom."""
+    _validate_rule_id(rule_id)
     custom_path = _resolve_path("custom", rule_id)
     builtin_path = _resolve_path("builtin", rule_id)
     if builtin_path.exists() and not custom_path.exists():
@@ -633,6 +665,7 @@ async def update_rule(rule_id: str, body: RuleUpdateIn) -> RuleDetail:
 @router.delete("/{rule_id}")
 async def delete_rule(rule_id: str) -> Response:
     """Remove a custom rule. Built-ins are immutable."""
+    _validate_rule_id(rule_id)
     builtin_path = _resolve_path("builtin", rule_id)
     custom_path = _resolve_path("custom", rule_id)
     if builtin_path.exists() and not custom_path.exists():

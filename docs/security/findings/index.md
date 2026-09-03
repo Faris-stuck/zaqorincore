@@ -96,6 +96,7 @@ that was added to `ingest_cloudflare.py` for F-027; documented as F-028.
 | [F-028](F-028-webhook-json-depth-dos.md) | Low | `/api/v1/ingest/webhook` uses raw `json.loads` with no nesting-depth cap (F-027 sibling) | **Closed in v3.4.30** (`safe_loads` from `utils.depth_json`) |
 | [F-029](F-029-ws-hello-uncapped.md) | Medium | WebSocket HELLO frame uncapped + `json.loads` unbounded depth (F-009 residual) | **Closed in v3.4.30** (HELLO cap + `safe_loads`) |
 | [F-030](F-030-server-wide-json-depth-audit.md) | Low | Server-wide audit: 3 residual `json.loads` call sites in `evidence.py`, `api/v1/evidence.py`, `error_envelope.py` (defence-in-depth) | **Closed in v3.4.31** (all sites use `safe_loads`) |
+| [F-031](F-031-rules-studio-path-traversal.md) | Medium | Path traversal in `rules_studio._resolve_path` via operator-supplied `rule_id` (GET/PUT/DELETE/test endpoints) | **Closed in v3.4.32** (`_validate_rule_id` applied to all 5 endpoints) |
 
 ## Round 3 (cycle 61) — clean
 

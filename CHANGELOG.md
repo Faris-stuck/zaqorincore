@@ -392,3 +392,21 @@ worker keeps its own `_STREAM`. Mitigation options are documented in
 - No credentials.
 - No AI-jargon.
 - Public-release audit clean.
+
+## [3.4.32] - 2026-09-04
+
+### Security
+
+- **F-031 closed** - path traversal in `rules_studio._resolve_path` via URL-segment `rule_id`. Added `_RULE_ID_PATTERN = ^[A-Za-z0-9_.\-]{1,64}$` and `_validate_rule_id(rule_id)` helper that raises HTTPException(400) on mismatch. Applied at `_read_rule_detail`, `update_rule`, and `delete_rule` (POST `create_rule` already validated via `_sanitize_rule_id`).
+
+### Tests
+
+- 31/31 tests pass (8 F-027 + 7 F-028 + 8 F-029 + 8 F-031).
+- New file: `server/tests/api/test_rules_studio_f031.py`. The test module mirrors the production regex instead of importing the production module, to avoid the pre-existing FastAPI 0.133 import-time condition that blocks integration tests.
+
+### Constraints honored
+
+- No IP addresses.
+- No credentials.
+- No AI-jargon.
+- Public-release audit clean.
