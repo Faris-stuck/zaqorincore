@@ -81,6 +81,20 @@ nav:
   - Getting started:
       - Operator guide: operator-guide.md
   - Roadmap: roadmap.md
+  - Detections:
+      - detections/index.md
+      - Self-Defense:
+          - detections/self-defense/index.md
+          - T1190.001 — WS HELLO oversized: detections/self-defense/T1190_001_ws_hello_oversized.md
+          - T1110.003 — Ingest 401/403 burst: detections/self-defense/T1110_003_ingest_bruteforce.md
+          - T1078.001 — API key geo anomaly: detections/self-defense/T1078_001_api_key_geo_anomaly.md
+          - T1098.001 — Audit log JSONL disabled: detections/self-defense/T1098_001_audit_log_gap.md
+          - T1505.003 — CSP violation: detections/self-defense/T1505_003_csp_violation.md
+          - T1499.004 — WS DoS: detections/self-defense/T1499_004_ws_dos.md
+          - T1485.001 — nft invalid table/chain: detections/self-defense/T1485_001_nft_invalid_table_chain.md
+          - T1078.002 — HMAC replay multi-IP: detections/self-defense/T1078_002_hmac_replay_multi_ip.md
+          - T1190.002 — HMAC challenge brute force: detections/self-defense/T1190_002_hmac_challenge_bruteforce.md
+          - T1059.004 — curl|bash install: detections/self-defense/T1059_004_curl_pipe_bash.md
   - Phases:
       - Phase 1 — Agent: PHASE1.md
       - Phase 2 — Server core: PHASE2.md
