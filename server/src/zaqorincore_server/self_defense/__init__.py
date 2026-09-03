@@ -13,6 +13,11 @@ Public surface:
 * ``emit(event)`` — append a :class:`ZaqorinEvent` to the runner's
   in-process stream so the Sigma engine can correlate. The runner
   is responsible for actually firing rules; ``emit`` only buffers.
+* ``drain(max_items)`` — snapshot the current stream (bounded slice
+  of the most recent events).
+* ``with_stream_lock()`` — context manager yielding while holding
+  ``_STREAM_LOCK``. Use for atomic read-modify-write of the stream,
+  e.g. snapshot + clear in a single critical section.
 
 The pack is intentionally focused (15 rules as of v3.4.11) and is
 expected to grow over time as new attack patterns are observed.
@@ -23,8 +28,9 @@ from __future__ import annotations
 import logging
 import threading
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from ..rule_engine.sigma import (
     CompiledSigmaRule,
@@ -95,6 +101,32 @@ def emit(event: ZaqorinEvent) -> None:
         _STREAM.append(event)
 
 
+@contextmanager
+def with_stream_lock() -> Iterator[None]:
+    """Yield while holding ``_STREAM_LOCK``.
+
+    Exposed so callers that need an **atomic read-modify-write**
+    over the stream can do the whole thing in one critical
+    section — preventing a concurrent ``emit()`` from interleaving
+    between the read and the write.
+
+    Typical usage — snapshot + clear under one lock::
+
+        with with_stream_lock():
+            pending = list(_STREAM)
+            _STREAM.clear()
+        # process `pending` outside the lock
+
+    The lock is the same ``_STREAM_LOCK`` instance used by
+    :func:`emit` and :func:`drain`. Holding this context manager
+    blocks new emits and concurrent drains for its duration; keep
+    the critical section short (the underlying deque ops are
+    microseconds).
+    """
+    with _STREAM_LOCK:
+        yield
+
+
 def drain(max_items: int = 256) -> Iterable[ZaqorinEvent]:
     """Snapshot the current stream. The runner calls this; we keep
     the snapshot semantics simple (list copy) so the runner can
@@ -104,7 +136,7 @@ def drain(max_items: int = 256) -> Iterable[ZaqorinEvent]:
     lock so a concurrent ``emit`` cannot shift the deque mid-slice
     and produce a partial or inconsistent view.
     """
-    with _STREAM_LOCK:
+    with with_stream_lock():
         # Snapshot copy inside the lock — a concurrent append
         # between ``list()`` and the slice would otherwise shift
         # the deque and could truncate or duplicate entries at
@@ -118,5 +150,6 @@ __all__ = [
     "ZaqorinEvent",
     "emit",
     "drain",
+    "with_stream_lock",
     "load_rules",
 ]
