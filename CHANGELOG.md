@@ -208,6 +208,71 @@ v3.4.4 closes F-018 in the single-process case. The multi-worker
 mitigation is documented in `self_defense/MULTI_WORKER.md` and tracked
 separately.
 
+## [3.4.5] - 2026-09-03 - CI Workflow + Round 3 Audit Clean
+
+v3.4.5 adds a CI workflow (`.github/workflows/test.yml`) that runs
+the full test matrix on push/PR, and documents the Round 3 audit
+which found zero new findings in the v3.4.x self-defense code.
+
+### Highlights
+
+- **CI workflow**: Python 3.12, rules tests (210), integration
+  tests (21), ruff lint, gitleaks secret scan.
+- **Round 3 audit CLEAN**: path traversal, JSON injection (CWE-91),
+  integer overflow, TOCTOU, missing rate-limit all reviewed, zero
+  new findings.
+- **235/235 tests pass** (210 rules + 21 integration + 4 ci-workflow).
+
+## [3.4.6] - 2026-09-03 - 13 Self-Defense Rules (T1505.005 + T1078.003)
+
+v3.4.6 adds two more self-defense Sigma rules: T1505.005 (CSP report
+with empty blocked-uri — probe signal) and T1078.003 (CSP recon:
+same src_ip across many document-uri).
+
+### Highlights
+
+- **T1505.005**: empty `blocked_uri` is a high-fidelity probe signal
+  (real browsers always populate the field, even if with `inline` or
+  an actual URL).
+- **T1078.003**: 5 distinct `document_uri` per `src_ip` in 60s =
+  recon. A benign browser has 1-2 per session.
+- **13 self-defense rules** total (was 11).
+- **245/245 tests pass** (220 rules + 21 integration + 4 ci-workflow).
+
+### Coverage delta
+
+- 28/200 (14.0%) → **30/200 (15.0%) MITRE**.
+- Tags live: v0.1 … v3.4.6.
+
+## [3.4.7] - 2026-09-03 - F-019 Hostname Redaction (CWE-200)
+
+v3.4.7 closes F-019 by replacing the literal public-DNS hostname in
+the `/install-command` response `warnings` field with a 12-char
+SHA-256 prefix and the literal `redacted` marker. The operator still
+sees the full hostname in the request log.
+
+### Highlights
+
+- **F-019 closed**: CWE-200 information exposure. Attacker who can
+  see their own response can no longer confirm their public DNS
+  configuration.
+- **Deterministic redaction**: same hostname → same hash prefix, so
+  operators can still correlate across requests.
+- **246/246 tests pass** (220 rules + 22 integration + 4 ci-workflow).
+- **Round 4 audit**: 1 new, 1 closed, 0 net open.
+
+## [3.4.8] - 2026-09-03 - Round 5 Docs Audit (F-020)
+
+v3.4.8 closes the third F-020 issue (CHANGELOG missing v3.4.5..
+v3.4.7 entries) and ships the Round 5 docs audit results.
+
+### Highlights
+
+- **F-020 closed**: mkdocs.yml Security section, CHANGELOG
+  `[Unreleased]` header, findings index page.
+- **250/250 tests pass**.
+- **20 findings closed total** (F-001..F-020).
+
 ### Fix: F-018 — `self_defense.emit()` is now thread-safe
 
 `server/src/zaqorincore_server/self_defense/__init__.py` previously
