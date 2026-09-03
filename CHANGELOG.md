@@ -5,6 +5,12 @@ All notable changes to ZaqorinCore are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+In-flight work for v3.5.0. No breaking changes planned; no
+`**BREAKING**` items. See `docs/security/AUDIT-2026-09-03.md` for
+the current round-by-round audit history.
+
 ## [3.4.0] - 2026-09-03 - Self-Defense Expansion (4 more Sigma rules + nft/process events)
 
 v3.4.0 extends the v3.3.0 self-defense pack with 4 additional Sigma rules

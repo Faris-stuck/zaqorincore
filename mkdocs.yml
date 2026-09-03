@@ -114,6 +114,11 @@ nav:
       - ADR-006 eBPF kernel telemetry (proposed): decisions/ADR-006-ebpf-kernel-telemetry.md
       - ADR-007 multi-platform agents (proposed): decisions/ADR-007-multi-platform-agents.md
       - ADR-008 SOAR webhook delivery (proposed): decisions/ADR-008-soar-webhook-delivery.md
+  - Security:
+      - Audit log: security/AUDIT-2026-09-03.md
+      - Retrospective: security/RETROSPECTIVE-2026-09-03.md
+      - Findings index: security/findings/index.md
+      - Remediation plan: security/remediation/REMEDIATION-PLAN.md
   - Reference:
       - 5-min demo: DEMO.md
       - Changelog: https://github.com/Faris-stuck/zaqorincore/blob/main/CHANGELOG.md
