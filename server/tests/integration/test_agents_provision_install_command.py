@@ -203,6 +203,40 @@ def test_install_command_warns_unknown_os(client_no_auth: TestClient) -> None:
     assert any("SHA-256" in w for w in body["warnings"]), body["warnings"]
 
 
+def test_install_command_warnings_redact_public_dns(
+    client_no_auth: TestClient,
+) -> None:
+    """F-019: public-DNS hostname is redacted in the response.
+
+    The endpoint detects a public-DNS-named host and adds a
+    warning. The warning must contain a SHA-256 prefix and the
+    literal 'redacted' string; it must NOT contain the literal
+    hostname. The operator still sees the full hostname in the
+    request log.
+    """
+    public_host = "vps-jakarta-web-01.example.test"
+    payload = {"agent_id": "agent-test-redact", "host": public_host}
+    r = client_no_auth.post(
+        "/api/v1/agents/provision/install-command", json=payload
+    )
+    assert r.status_code == status.HTTP_200_OK
+    body = r.json()
+    pub_dns_warnings = [
+        w for w in body["warnings"] if "public DNS" in w
+    ]
+    assert pub_dns_warnings, (
+        f"expected at least one public-DNS warning, got: {body['warnings']}"
+    )
+    for w in pub_dns_warnings:
+        assert public_host not in w, f"hostname leaked in warning: {w!r}"
+        assert "redacted" in w, f"warning should be marked redacted: {w!r}"
+        # SHA-256 hex prefix is 12 chars, all lowercase
+        assert any(
+            len(token) == 12 and all(c in "0123456789abcdef" for c in token)
+            for token in w.split()
+        ), f"expected a 12-char hex fingerprint, got: {w!r}"
+
+
 def test_install_command_default_os(client_no_auth: TestClient) -> None:
     """Omitting ``os`` from the body defaults to ``linux``.
 

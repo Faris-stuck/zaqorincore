@@ -711,9 +711,19 @@ async def post_provision_install_command(
     digest = artifact_sha256
 
     if not host.startswith(("zaqorin-", "10.", "192.168.", "172.")):
+        # F-019: redact the literal hostname from the response
+        # (CWE-200). The operator still sees the full value in
+        # the request log; the response carries only a
+        # deterministic SHA-256 prefix they can grep on.
+        host_fp = hashlib.sha256(host.encode("utf-8")).hexdigest()[:12]
+        log.info(
+            "agents_provision: public-DNS host detected",
+            extra={"host_fp": host_fp, "host": host},
+        )
         warnings.append(
-            f"host {host!r} is a public DNS name; the installer "
-            "will reach the public release bucket"
+            f"host {host_fp} is a public DNS name (name redacted "
+            "— see server logs); the installer will reach the "
+            "public release bucket"
         )
 
     return InstallCommandOut(
