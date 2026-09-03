@@ -11,6 +11,21 @@ In-flight work for v3.5.0. No breaking changes planned; no
 `**BREAKING**` items. See `docs/security/AUDIT-2026-09-03.md` for
 the current round-by-round audit history.
 
+## [3.4.13] - 2026-09-03
+
+### Security
+
+- **with_stream_lock()** public context manager added to `self_defense` package. Allows atomic read-modify-write of the in-process event stream. `drain()` refactored to use it.
+- 223/223 tests pass (was 221, +2 new).
+
+## [3.4.12] - 2026-09-03
+
+### Detection
+
+- **T1583.003** added: nft.call with banned target (high severity). Indicates the agent's network is being deliberately redirected to a Tor exit, sinkhole, or C2.
+- 15 self-defense rules total (was 14).
+- 221/221 tests pass (was 211, +10 new).
+
 ## [3.4.0] - 2026-09-03 - Self-Defense Expansion (4 more Sigma rules + nft/process events)
 
 v3.4.0 extends the v3.3.0 self-defense pack with 4 additional Sigma rules
