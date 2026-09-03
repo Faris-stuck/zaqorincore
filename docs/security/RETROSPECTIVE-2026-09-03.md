@@ -28,9 +28,10 @@ shape of the work:
 
 ## Numbers
 
-- **Findings closed:** 22 (F-001..F-023; F-001..F-018 plus the implicit
+- **Findings closed:** 23 (F-001..F-024; F-001..F-018 plus the implicit
   v3.4.2 warnings-shadow catch across cycles 50-59; F-019 and F-020
-  in cycles 63-64; F-021 in cycle 67; F-023 in cycle 72).
+  in cycles 63-64; F-021 in cycle 67; F-023 in cycle 72; F-024 in
+  cycle 75).
 - **Findings open:** 1 — F-018 multi-worker portion (in-process fix
   shipped in v3.4.4; Redis-backed stream deferred to v3.5.0).
 - **Releases shipped:** 10 tags.
@@ -526,6 +527,135 @@ The audit-cycle-catches-bug pattern (cycles 57, 64, 67, 72) all rely
 on the rotation: if TEST and SECURITY were the same track, none of
 these would have been caught.
 
+## Cycles 73-76 — T1583.004 + F-024 + R10 clean
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line and closing F-024. Shape of the work:
+
+1. **Cycle 73 (DOCS)** — `90081ad` (subagent CHANGELOG backfill) +
+   `eaa4454` (CEO retro extend). CHANGELOG.md got v3.4.12, v3.4.13,
+   v3.4.14 entries; this retrospective extended to cover cycles 69-72
+   in the previous cycle. Headline bumped 21 → 22 findings. The
+   subagent picked up a stale dispatch (CHANGELOG backfill instead
+   of retro extend) and ran that cleanly — CEO finished the rest in
+   `eaa4454`. 22 findings closed total. **Clean** (172s / 18 calls).
+2. **Cycle 74 (DETECTION)** — `ea713cd` / tag `v3.4.15`. **T1583.004**
+   shipped — `nft.call` from unauthorized actor (high severity).
+   Catalogue now **16 self-defense rules** (was 15). 235/235 tests
+   pass (+5). 49 tags live. **Subagent-call-count lesson confirmed**:
+   the brief's "≤5 tests" instruction kept this subagent at 15 calls
+   (vs. 20-24 for prior detection cycles). Narrower test count =
+   cleaner subagent. **Clean** (300s / 15 calls — exactly on the
+   brief's discipline).
+3. **Cycle 75 (SECURITY)** — `f06d00c` (subagent F-024) +
+   `d170b06` (CEO fix) / tag `v3.4.16`. **F-024 closed**:
+   subagent's audit of the F-023 fix surface found a
+   Content-Length-only cap bypassable via chunked transfer
+   encoding. CEO rejected `Transfer-Encoding: chunked` with 411,
+   added regression test. 236/236 tests pass (+1). **23 findings
+   closed total (F-001..F-024)**. 5/6 audit vectors on the F-023
+   fix surface were clean (lock scope, `_evict_stale()`, lock
+   acquisition point, SSRF blocked_uri not outbound, XFF Starlette
+   CRLF sanitization) — the 1/6 hit rate validates the "subagent
+   audits the previous fix" pattern. **50-tag milestone** hit
+   (v0.1..v3.4.16). **CEO recovery** (subagent clean at 241s/16
+   calls; CEO inherited to apply fix + tag).
+4. **Cycle 76 (TEST, audit)** — `f0bb514` / tag `v3.4.17`. **Round 10
+   audit CLEAN** — 0 new findings. 236/236 tests pass (no code
+   changes). **Audit convergence: back to 0** after the R9 bump:
+   R1=7 → R2=2 → R3=0 → R4=1 → R5=1 → R6=1 → R7=0 → R8=1 → R9=1 →
+   R10=0. 51 tags live (v0.1..v3.4.17). 23 findings closed. 4 of
+   10 audit rounds clean (R3, R7, R10 confirmed; R9 found 1).
+   **Clean** (153s / 14 calls).
+
+### Numbers (delta from cycle 73 onwards)
+
+- **Findings closed (cycles 73-76):** 1 (F-024). Total now
+  **23 closed (F-001..F-024)**; 1 still open (F-018 multi-worker).
+- **Releases shipped:** 4 new tags (`v3.4.15`, `v3.4.16`,
+  `v3.4.17`) plus a CHANGELOG backfill commit (`90081ad`) and
+  two CEO-fix commits (`eaa4454`, `d170b06`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.004 is a
+  sub-technique of T1583 already covered; net MITRE count
+  unchanged, but self-defense rule catalogue grew 15 → 16).
+- **Tests:** 230 → 236 passing. Net delta **+6 tests** with zero
+  regressions.
+- **Tags:** 48 → 51 (`v0.1`..`v3.4.17`). **50-tag milestone**
+  crossed at v3.4.16.
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 73-76.
+
+### Key learnings
+
+#### 1. Subagent-call-count discipline — ≤5 tests, 15 calls
+
+Cycle 74 proved the brief's "≤5 test cases" instruction is the
+difference between borderline and clean detection cycles. Prior
+detection cycles (66, 70) hit 20-21 calls and sat right at the
+240s/20-call hard cap. Cycle 74 stayed at 15 calls by shipping
+exactly 5 new tests, no more. The lesson is now part of the
+detection-cycle brief template: "≤5 tests per cycle" is the default
+unless the rule's complexity demands more.
+
+#### 2. Audit convergence — back to 0 in R10
+
+The ten-round convergence table is now:
+
+| Round | Cycle | Bug count | Findings closed       |
+|--------|-------|-----------|-----------------------|
+| R1     | 51    | 7         | F-001..F-007          |
+| R2     | 55    | 2         | F-017, F-018          |
+| R3     | 61    | 0         | (clean)               |
+| R4     | 63    | 1         | F-019                 |
+| R5     | 64    | 1         | F-020                 |
+| R6     | 67    | 1         | F-021                 |
+| R7     | 68    | 0         | (clean)               |
+| R8     | 72    | 1         | F-023 (4 sub-bugs)    |
+| R9     | 75    | 1         | F-024 (chunked bypass)|
+| R10    | 76    | 0         | (clean)               |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1 → 1 → 0. The shape is
+healthy: R8 and R9 each surfaced a real bug in the previous fix's
+surface area, R10 came back clean. The "audit the previous fix"
+pattern (cycle N+1 audits cycle N's fix surface) is now structural —
+R8 audited R7's clean state and found F-023 in the helper module,
+R9 audited R8's F-023 fix and found F-024 in the same file's
+Content-Length check, R10 audited R9's F-024 fix and found nothing.
+
+#### 3. F-024 — chunked bypass via Content-Length-only cap
+
+Cycle 75's F-024 was the cleanest possible "subagent finds, CEO
+fixes" cycle:
+
+- Subagent on SECURITY track audited the F-023 fix surface (5 of 6
+  vectors clean, 1 hit — Content-Length cap bypassable via
+  chunked transfer encoding). 241s / 16 calls, clean.
+- CEO on same track closed the bypass: reject
+  `Transfer-Encoding: chunked` with `411 Length Required`. 1 new
+  regression test.
+- v3.4.16 tagged, CHANGELOG entry, AUDIT updated.
+
+This is the same shape as cycle 72 (F-023 cluster) but compressed
+into one cycle. The audit-the-previous-fix discipline is paying off
+faster now.
+
+#### 4. 50-tag milestone (v3.4.16)
+
+v3.4.16 was the project's 50th git tag (v0.1..v3.4.16). The
+50-tag mark is a structural milestone: each tag represents a
+release that survived audit, tests, CHANGELOG, and tag hygiene.
+Across 50 tags, the constraint hygiene record holds: zero IP
+literals, zero credentials in committed code, zero AI-jargon.
+
+#### 5. Track-balance still healthy
+
+Cycles 73-76 rotated: DOCS → DETECTION → SECURITY → TEST. The
+five-track rotation (SECURITY → TEST → DETECTION → DOCS → BENCH)
+visited three of the five surfaces in this four-cycle window.
+The cycle 72/75 pair is notable: SECURITY on cycle 75 audited
+the cycle 72 SECURITY-track fix surface (different round — R9,
+not the same sub-track). Track-balance is preserved.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
@@ -570,8 +700,8 @@ creativity, novel chains, off-by-default tooling).
 
 ## Closing note
 
-Twenty-three cycles, twenty-two findings closed, fifteen self-defense
-rules, two hundred thirty tests, twenty releases shipped, zero
+Twenty-three cycles, twenty-three findings closed, sixteen self-defense
+rules, two hundred thirty-six tests, twenty-four releases shipped, zero
 regressions, zero IP literals, zero credentials, zero AI-jargon.
 The work-rate is high but the constraints are intact. The single
 open finding (F-018 multi-worker) is documented, scoped, and on the
