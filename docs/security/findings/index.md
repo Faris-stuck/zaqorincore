@@ -42,6 +42,24 @@ project's policy is that nothing is hidden.
 |-----|----------|-------|--------|
 | [F-020](F-020-docs-round-5.md) | Low | Docs audit: missing security nav, missing [Unreleased] header, missing v3.4.5/6/7 entries | Open (partial fix in this commit) |
 
+## Round 6 findings (cycle 67)
+
+| ID  | Severity | Title | Status |
+|-----|----------|-------|--------|
+| [F-021](F-021-install-warnings-prefix-overlap.md) | Low | F-019 redaction logic bypassed by DNS-name prefixes that overlap RFC1918 octets | **Closed in v3.4.10** |
+
+## Round 7 (cycle 68) — clean
+
+See [ROUND7-CLEAN.md](ROUND7-CLEAN.md). Re-hunt of the entire server
+tree at v3.4.10 for F-021-style prefix-overlap bugs surfaced no new
+findings.
+
+## Round 8 findings (cycle 72)
+
+| ID  | Severity | Title | Status |
+|-----|----------|-------|--------|
+| [F-023](F-023-csp-reporter-throttle-eviction.md) | Medium | CSP reporter throttle: race in `_throttle_allowed`, no eviction in `_recent`, no per-endpoint body cap, throttled traffic evicts `_STREAM` audit | Open |
+
 ## Round 3 (cycle 61) — clean
 
 See [ROUND3-CLEAN.md](ROUND3-CLEAN.md). Re-hunt of self-defense code
