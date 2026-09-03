@@ -59,8 +59,8 @@ def load_rules() -> list[CompiledSigmaRule]:
     return load_rules_from_dir(_RULES_DIR)
 
 
-SELF_DEFENSE_RULES: list[CompiledSigmaRule] = load_rules()
-RULE_TITLES: list[str] = [r.title for r in SELF_DEFENSE_RULES]
+SELF_DEFENSE_RULES: tuple[CompiledSigmaRule, ...] = tuple(load_rules())
+RULE_TITLES: tuple[str, ...] = tuple(r.title for r in SELF_DEFENSE_RULES)
 
 
 # In-process event stream. Bounded so a chatty emitter cannot OOM
