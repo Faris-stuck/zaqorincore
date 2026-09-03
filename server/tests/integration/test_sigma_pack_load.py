@@ -48,14 +48,14 @@ SELF_DEFENSE_DIR = (
 )
 
 
-def test_load_rules_from_dir_returns_19():
-    """Round 13 audit claim + cycle 86: 19 rules in the self-defense pack.
+def test_load_rules_from_dir_returns_20():
+    """Round 13 audit claim + cycle 90: 20 rules in the self-defense pack.
 
     The loader uses ``*.yml`` + ``*.yaml`` rglob and returns
-    CompiledSigmaRule instances. We assert exactly 19.
+    CompiledSigmaRule instances. We assert exactly 20.
     """
     rules = load_rules_from_dir(SELF_DEFENSE_DIR)
-    assert len(rules) == 19, f"expected 19 rules, got {len(rules)}"
+    assert len(rules) == 20, f"expected 20 rules, got {len(rules)}"
 
 
 def test_load_rules_all_are_compiled():
@@ -86,12 +86,12 @@ def test_load_rules_all_valid_uuid4():
 
 
 def test_load_rules_level_distribution():
-    """Round 13 audit claim + cycle 86: 11 high, 7 medium, 1 low, 0 critical."""
+    """Round 13 audit claim + cycle 90: 12 high, 7 medium, 1 low, 0 critical."""
     rules = load_rules_from_dir(SELF_DEFENSE_DIR)
     levels = {}
     for r in rules:
         levels[r.level] = levels.get(r.level, 0) + 1
-    assert levels.get("high", 0) == 11, f"high count: {levels}"
+    assert levels.get("high", 0) == 12, f"high count: {levels}"
     assert levels.get("medium", 0) == 7, f"medium count: {levels}"
     assert levels.get("low", 0) == 1, f"low count: {levels}"
     assert levels.get("critical", 0) == 0, f"critical count: {levels}"

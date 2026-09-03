@@ -1,0 +1,45 @@
+title: T1583.008 — nft.call unhandled chain (CWE-754)
+id: 29d40314-0f25-45e5-8a35-1b1426eddd51
+status: experimental
+description: |
+  Detects an nftables call that references a chain that is not registered
+  with the operator (e.g. an attacker creating chains in the inet table
+  family that the runner does not know about). Indicates rule-set
+  manipulation outside the operator's expected scope — a control-flow
+  check (CWE-754 Improper Check for Unusual or Exceptional Conditions)
+  on the operator side.
+
+  The engine pre-computes `unhandled_chain: true` on the event when
+  the target chain is not in the registered set, so this rule stays a
+  single-event Sigma rule (matches ADR-010 condition patterns).
+
+  Maps to F-5 from AUDIT-2026-09-03 (Acquired Infrastructure — operator
+  rule-set divergence).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+  - cwe.754
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_unhandled_chain:
+    unhandled_chain: false
+  condition: selection and not filter_unhandled_chain
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+  - target_family
+falsepositives:
+  - Operator custom chains deliberately added out-of-band
+level: high
