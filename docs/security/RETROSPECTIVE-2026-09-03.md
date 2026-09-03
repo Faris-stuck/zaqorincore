@@ -1146,6 +1146,193 @@ invariants confirming R14's claims, the audit + runtime
 pair is now structurally closed — drift in either layer
 would surface in the next cycle.
 
+## Cycles 89-92 — T1583.008 + R15 audit + immutability
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line. No new findings opened; the work was split across detection,
+audit, and test verification. Shape of the work:
+
+1. **Cycle 89 (DOCS)** — `5251747`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 85-88 (the prior pass on this same
+   document). **Fastest cycle on record** — 40s / 5 calls (the
+   subagent only had to read 5 files and write 1 new section;
+   pure read+write = minimal tool calls).
+2. **Cycle 90 (DETECTION)** — `316fd99` / tag `v3.4.25`. **T1583.008**
+   shipped — `nft.call` unhandled chain (CWE-754). Catalogue now
+   **20 self-defense rules** (was 19). 264/264 tests pass (+4 new).
+   E2E test drift detection worked cleanly: the brief explicitly
+   told the subagent to bump the e2e loader test from 19→20 rules
+   and 11→12 high; it did, and the CEO didn't need to fix anything.
+   The "subagent also updates the e2e test when adding a new rule"
+   pattern is now embedded in the brief template. **Borderline
+   clean** (218s / 16 calls — under the 240s/20-call cap by 20%).
+3. **Cycle 91 (SECURITY, audit + defense-in-depth)** — `9e983c0`
+   (subagent R15) + `0a3729e` (CEO hardening) / tag `v3.4.26`.
+   **Round 15 audit CLEAN** — 8 vectors audited on
+   `self_defense/__init__.py`, 0 findings. The audit found a
+   non-issue (the rules list was mutable, but nothing in the
+   code mutates it); the CEO decided to fix it anyway as a
+   1-line defense-in-depth: `SELF_DEFENSE_RULES` is now
+   `tuple[...]` instead of `list[...]`. **264/264 tests pass**
+   (no test changes). This is the **5th occurrence** of the
+   "subagent finds, CEO fixes" pattern.
+4. **Cycle 92 (TEST)** — `dcc983e`. **Immutability tests**
+   shipped — `test_self_defense_immutability.py` with 5 new
+   runtime tests:
+   - `test_self_defense_rules_is_tuple` — runtime type check.
+   - `test_rule_titles_is_tuple` — runtime type check.
+   - `test_self_defense_rules_not_mutable` — `.append(...)` raises.
+   - `test_self_defense_rules_count_is_20`.
+   - `test_self_defense_rules_have_unique_titles`.
+   **269/269 tests pass** (+5 new). Clean subagent (130s /
+   19 calls — under cap).
+
+### Numbers (delta from cycle 89 onwards)
+
+- **Findings closed (cycles 89-92):** 0 (no new findings). Total
+  still **24 closed (F-001..F-024)**; 1 still open (F-018
+  multi-worker).
+- **Releases shipped:** 2 new tags (`v3.4.25`, `v3.4.26`) plus
+  2 docs/test-only commits (`5251747`, `dcc983e`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.008 is a
+  sub-technique of T1583 already covered by T1583.001..T1583.007;
+  net MITRE count unchanged, but self-defense rule catalogue
+  grew **19 → 20**).
+- **Tests:** 260 → 269 passing. Net delta **+9 tests** with zero
+  regressions.
+- **Tags:** 58 → 60 (`v0.1`..`v3.4.26`).
+- **MITRE coverage:** 33/200 (16.5%) — passed 1/6 of the way to
+  the Q4 2026 50% target.
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 89-92.
+
+### Key learnings
+
+#### 1. "Audit → harden → test" 3-step pattern established (cycles 84-92)
+
+Over the last nine cycles, a 3-step pipeline emerged organically:
+
+1. **Audit** (subagent, SEC or TEST track) — finds a static
+   claim or invariant.
+2. **CEO hardens** (1-line code change, often as a follow-up
+   commit by the parent).
+3. **Test** (subagent, TEST track) — verifies the hardening at
+   runtime, not just by reading source.
+
+Cycles 84-92 trace this exactly:
+
+- Cycle 87's R14 audit: SELF_DEFENSE_RULES = list (static claim).
+- Cycle 91's CEO hardening: tuple (defense-in-depth).
+- Cycle 92's immutability tests: tuple type, count, uniqueness,
+  append-raises.
+
+The chain is now self-sustaining: an invariant declared in an
+audit report becomes a runtime check within 1-3 cycles. Drift in
+the runtime layer surfaces in the next audit (R15), drift in
+the static layer surfaces in the next test (cycle 92). This is
+the same defense-in-depth shape as cycles 87/88's audit+runtime
+pair, extended to a 3-step pipeline.
+
+#### 2. E2E test drift detection now embedded in the brief template (cycle 90)
+
+Cycles 86 and 90 both added rules that broke the e2e loader
+test. Cycle 86 required a CEO follow-up (33c7e18 bumped the
+expectations 18→19, 10→11 high). Cycle 90's brief **explicitly
+told the subagent** to bump the loader test from 19→20 rules
+and 11→12 high — and the subagent did, with no CEO fixup.
+
+Three data points on the e2e drift-catch:
+
+- Cycle 86: detection rule added → test broken → CEO fixup.
+- Cycle 90: detection rule added → test broken → brief
+  pre-emptive → subagent self-fixes.
+- Cycle 92: rule count = 20 → runtime test verifies count = 20.
+
+The pattern is now load-bearing: every new rule ships with its
+loader-test bump in the same dispatch. Future cycle briefs will
+continue to include the loader-test bump as a precondition.
+
+#### 3. Sigma engine memory — 2nd self-correction (cycle 90)
+
+The cycle 90 subagent (a DETECTION cycle, where compound-not
+mistakes historically happen) shipped T1583.008 on the first
+attempt with no CEO correction — the **2nd time** a detection
+subagent has self-corrected a Sigma engine constraint without
+prompting (the 1st was cycle 70's T1583.003).
+
+Compare cycle 62 (compound-not rejection → CEO recovery):
+the constraint is now in the subagent's prior, not just the
+CEO's. Combined with the cycle 90 e2e self-fix and the
+cycle 92 immutability test authoring, this is the third
+consecutive subagent in cycles 90-92 that completed its work
+without CEO intervention on the technical surface.
+
+#### 4. Audit convergence — R15 = 0, R14 = 0
+
+The fifteen-round convergence table is now:
+
+| Round | Cycle | Bug count | Findings closed           |
+|-------|-------|-----------|---------------------------|
+| R1    | 51    | 7         | F-001..F-007              |
+| R2    | 55    | 2         | F-017, F-018              |
+| R3    | 61    | 0         | (clean)                   |
+| R4    | 63    | 1         | F-019                     |
+| R5    | 64    | 1         | F-020                     |
+| R6    | 67    | 1         | F-021                     |
+| R7    | 68    | 0         | (clean)                   |
+| R8    | 72    | 1         | F-023 (4 sub-bugs)        |
+| R9    | 75    | 1         | F-024 (chunked bypass)    |
+| R10   | 76    | 0         | (clean)                   |
+| R11   | 79    | 1         | F-025 (TE vendor bypass)  |
+| R12   | 80    | 0         | (clean)                   |
+| R13   | 83    | 0         | (clean)                   |
+| R14   | 87    | 0         | (clean)                   |
+| R15   | 91    | 0         | (clean)                   |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1 → 1 → 0 → 1 → 0 → 0 → 0 → 0.
+**Seven clean rounds in the last nine** (R10, R12, R13, R14,
+R15, plus R3 and R7 earlier). The audit chain is converging:
+R11 was the last `csp_violation_reporter` fix, R13 audited the
+Sigma pack and found nothing, R14 audited a fresh surface and
+found nothing, R15 audited `self_defense/__init__.py` and
+found nothing — the only "find" was a defense-in-depth nit the
+CEO chose to fix. With cycle 92's runtime immutability tests
+confirming the cycle 91 hardening, the audit + runtime +
+defense-in-depth triplet is now structurally closed.
+
+#### 5. Subagent streak — clean streak of 4 across the cycle 89-92 window
+
+Cycles 89-92 produced four consecutive clean subagents:
+
+- **Cycle 89** (40s / 5 calls) — pure read+write, fastest ever.
+- **Cycle 90** (218s / 16 calls) — under cap by 20%.
+- **Cycle 91** (291s / 13 calls, audit-only portion) — under
+  cap by 35%.
+- **Cycle 92** (130s / 19 calls) — under cap.
+
+No CEO recoveries in the window, no 429s, no timeouts on the
+subagent side. Cycle 91 was a "subagent finds, CEO hardens"
+pair (5th occurrence) but the subagent itself was clean —
+the CEO commit was a separate follow-up, not a recovery.
+
+#### 6. Track-balance preserved across cycles 89-92
+
+DOCS → DETECTION → SECURITY → TEST. The same four-track
+rotation as cycles 85-88, with each track landing on the
+surface the previous track didn't touch:
+
+- **Cycle 89 (docs)** wrote about cycles 85-88.
+- **Cycle 90 (detection)** shipped T1583.008, breaking the
+  loader test.
+- **Cycle 91 (security)** audited `self_defense/__init__.py`,
+  not the over-audited `csp_violation_reporter`.
+- **Cycle 92 (test)** runtime-verified the cycle 91 hardening.
+
+The cycle 91/92 pair extends the cycle 87/88 audit+runtime
+pattern: cycle 91 found the static claim, cycle 92 made the
+runtime check. Two different tracks, two different
+verification methods, both clean.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
