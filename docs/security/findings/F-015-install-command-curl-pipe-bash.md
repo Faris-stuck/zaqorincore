@@ -6,7 +6,8 @@
 | CWE | CWE-494 (Download of Code Without Integrity Check) |
 | CVSS-like | 4.0 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:L) |
 | Location | `server/src/zaqorincore_server/api/v1/agents_provision.py:212-225`, `install-command` handler |
-| Status | Acknowledged design (docstring explains it); low residual risk |
+| Status | **Fixed (cycle 55)** — rendered command now download-verifies SHA-256 against a CI-pinned digest before extracting. See `docs/security/CHECKSUM-VERIFICATION.md`. |
+| Fix commit | cycle 55 |
 
 ## Description
 

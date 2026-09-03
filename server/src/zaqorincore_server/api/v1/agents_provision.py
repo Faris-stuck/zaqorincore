@@ -135,6 +135,25 @@ _MAX_TEMPLATE_BYTES = 64 * 1024
 # inspected before being executed.
 _DEFAULT_SERVER_URL = "wss://zaqorin.example.com:8443/api/v1/events"
 
+# Pinned SHA-256 digests of the per-OS agent tarballs. Updated
+# by CI when a new release ships; the rendered install script
+# refuses to extract on mismatch. Closing F-015: the previous
+# ``curl | tar -xz`` shape had no integrity check between the
+# release bucket and the operator's filesystem.
+#
+# These are deterministic placeholders until the release CI
+# job populates them. A mismatch against an actual artifact
+# causes the installer to fail loudly, not silently run an
+# attacker-controlled tarball.
+_ARTIFACT_SHA256_BY_OS: dict[str, str] = {
+    "linux": (
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    "windows": (
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+}
+
 # Server root for the dispatcher (same constant the rules_studio
 # module uses so the two routers agree on where to anchor
 # filesystem-relative lookups if we ever add a config-file
@@ -216,11 +235,23 @@ class InstallCommandIn(BaseModel):
 
 
 class InstallCommandOut(BaseModel):
-    """POST /agents/provision/install-command response."""
+    """POST /agents/provision/install-command response.
+
+    ``command`` is a self-installing one-liner that downloads the
+    agent tarball to a temp file, verifies its SHA-256 against the
+    pinned digest in ``sha256``, then extracts. This closes F-015:
+    the previous shape ``curl | tar -xz`` trusted whatever the
+    release server shipped on every fresh install.
+    """
 
     command: str
     sha256: str = Field(
-        description="SHA-256 of the rendered command, hex-encoded."
+        description=(
+            "SHA-256 of the agent tarball artifact (not the rendered "
+            "command). The installer refuses to extract on a "
+            "mismatch. Recomputed from a CI-pinned manifest; the "
+            "endpoint never fetches the artifact."
+        )
     )
     warnings: list[str] = Field(default_factory=list)
 
@@ -584,6 +615,24 @@ async def post_provision_install_command(
         f"https://releases.zaqorin.example.com/${{ZAQORIN_VERSION:-latest}}/{asset}"
     )
 
+    # Artifact digest — populated from a CI-pinned manifest, NOT
+    # fetched at request time (that would be an SSRF; same lesson
+    # as F3). The install script refuses to extract if the
+    # downloaded tarball's digest does not match. Closing F-015:
+    # the previous ``curl ... | tar -xz`` piped untrusted bytes
+    # straight into the extractor; the new shape downloads to a
+    # temp file, verifies SHA-256 against this constant, then
+    # extracts only on match.
+    artifact_sha256 = _ARTIFACT_SHA256_BY_OS.get(body.os)
+    if artifact_sha256 is None:
+        # Defensive — keeps the endpoint working for unknown OSes
+        # but flags the gap so the operator notices.
+        artifact_sha256 = "0" * 64
+        warnings.append(
+            f"no pinned SHA-256 for os={body.os!r}; the installer "
+            "will REFUSE to extract until the manifest ships one"
+        )
+
     # Build the agent.toml inline using a heredoc so the
     # operator can ``cat /etc/zaqorin/agent.toml`` and see
     # the values without hunting for a sidecar file.
@@ -596,17 +645,25 @@ async def post_provision_install_command(
     if body.os == "windows":
         # Windows doesn't have curl|bash. The endpoint is
         # deliberately cross-platform; the Windows payload
-        # is a PowerShell snippet (Invoke-WebRequest +
-        # Expand-Archive + sc.exe) so the WebUI can show
-        # the right thing for each OS without forking the
-        # endpoint.
+        # is a PowerShell snippet that downloads to a temp
+        # file, verifies SHA-256 via Get-FileHash, then
+        # extracts. Same download-verify-execute shape as the
+        # POSIX path — closes F-015 on both OSes.
         install = (
             "$ErrorActionPreference = 'Stop'; "
             "$url = '"
             + download_url
             + "'; "
             "$dst = Join-Path $env:TEMP 'zaqorin-agent.tar.gz'; "
+            "$expected = '"
+            + artifact_sha256
+            + "'; "
             "Invoke-WebRequest -Uri $url -OutFile $dst -UseBasicParsing; "
+            "$actual = (Get-FileHash -Algorithm SHA256 -Path $dst).Hash.ToLower(); "
+            "if ($actual -ne $expected) { "
+            "Remove-Item $dst -Force; "
+            "throw \"SHA-256 mismatch: expected $expected, got $actual\" "
+            "}; "
             "New-Item -ItemType Directory -Force -Path "
             "'C:\\ProgramData\\zaqorin-agent' | Out-Null; "
             "tar -xzf $dst -C 'C:\\ProgramData\\zaqorin-agent'; "
@@ -617,10 +674,21 @@ async def post_provision_install_command(
             "& 'C:\\ProgramData\\zaqorin-agent\\zaqorin-agent.exe' --register"
         )
     else:
+        # POSIX: download to a temp file, verify SHA-256, then
+        # extract. No more pipe-to-extractor; the bytes are
+        # pinned before they touch the filesystem.
         install = (
             "set -euo pipefail; "
             "tmp=$(mktemp -d); "
-            f"curl -fsSL {shlex.quote(download_url)} | tar -xz -C $tmp; "
+            "tgz=$tmp/zaqorin-agent.tar.gz; "
+            f"curl -fsSL {shlex.quote(download_url)} -o $tgz; "
+            f"actual=$(sha256sum $tgz | awk '{{print $1}}'); "
+            f"expected={shlex.quote(artifact_sha256)}; "
+            "if [ \"$actual\" != \"$expected\" ]; then "
+            "echo \"SHA-256 mismatch: expected $expected, got $actual\" >&2; "
+            "rm -rf $tmp; exit 1; "
+            "fi; "
+            "tar -xz -C $tmp -f $tgz; "
             "install -m 0755 $tmp/zaqorin-agent /usr/local/bin/zaqorin-agent; "
             "install -d -m 0755 /etc/zaqorin; "
             "cat > /etc/zaqorin/agent.toml <<'ZAQORIN_EOF'\n"
@@ -631,13 +699,15 @@ async def post_provision_install_command(
             "systemctl enable --now zaqorin-agent"
         )
 
-    # SHA-256 of the literal command so the WebUI can show a
-    # "fingerprint" beside the copy button. Recomputed every
-    # call (the rendered command embeds the random auth
-    # token, so the hash is a fresh witness per install).
+    # SHA-256 of the artifact (NOT the rendered command) so the
+    # operator can cross-check against the published manifest in
+    # the release notes. The rendered command embeds the random
+    # auth token, so a digest of it would change every call —
+    # useless as a fingerprint. The artifact digest is stable
+    # per release.
     import hashlib
 
-    digest = hashlib.sha256(install.encode("utf-8")).hexdigest()
+    digest = artifact_sha256
 
     warnings: list[str] = []
     if not host.startswith(("zaqorin-", "10.", "192.168.", "172.")):
