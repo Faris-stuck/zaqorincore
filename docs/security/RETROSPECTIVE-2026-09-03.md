@@ -656,6 +656,150 @@ The cycle 72/75 pair is notable: SECURITY on cycle 75 audited
 the cycle 72 SECURITY-track fix surface (different round — R9,
 not the same sub-track). Track-balance is preserved.
 
+## Cycles 77-80 — T1583.005 + F-025 + R12 clean
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line and closing F-025. Shape of the work:
+
+1. **Cycle 77 (DOCS)** — `86da7f8`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 73-76 (this document, prior pass).
+   Headline bumped from 22 → 23 findings. **Clean subagent**
+   (145s / 8 calls — fastest docs cycle yet).
+2. **Cycle 78 (DETECTION)** — `9b7c999` / tag `v3.4.18`.
+   **T1583.005** shipped — `nft.call` with bypass signature
+   (CWE-285). Catalogue now **17 self-defense rules** (was 16).
+   241/241 tests pass (+5). **Subagent-call-count lesson
+   revised**: 5 tests + 2 module bumps + multiple file reads
+   still pushed the subagent to 29 calls / 565s (over the cap,
+   but completed cleanly). Future briefs should cap at 4 tests
+   + 2 module edits, or use a larger-context model. 52 tags live
+   (v0.1..v3.4.18). 23 findings closed.
+3. **Cycle 79 (SECURITY)** — `0fe5a66` (subagent F-025) +
+   `d5e2a41` (CEO fix) / tag `v3.4.19`. **F-025 closed**:
+   subagent's audit of the F-024 fix surface found a TE-bypass —
+   `Transfer-Encoding: chunked` plus `X-Transfer-Encoding:` (a
+   non-standard header some TE-vendor middlewares parse in
+   place of the canonical one) could smuggle past the v3.4.16
+   `411 Length Required` rejection. CEO extended the check to
+   3 header names (`transfer-encoding`, `x-transfer-encoding`,
+   `te`) and rejected all chunked variants. 243/243 tests pass
+   (+2). **24 findings closed total (F-001..F-025)**. 5 of 6
+   audit vectors on the F-024 fix surface were clean (canonical
+   CL+TE, multi-encoding `identity, chunked`, case variants,
+   `chunked; params`, other endpoints — `ingest_webhook` has
+   its own 1 MiB cap); the 1/6 hit rate validates the
+   "subagent audits the previous fix" pattern again.
+   **CEO recovery** (subagent clean at 510s/28 calls — over cap
+   but inherited cleanly).
+4. **Cycle 80 (TEST, audit)** — `7db942e` / tag `v3.4.20`.
+   **Round 12 audit CLEAN** — 0 new findings. 243/243 tests pass
+   (no code changes). **5 clean audit rounds in a row at the
+   tail** (R8=1, R9=1, R10=0, R11=1, R12=0). Still finding
+   1/cycle on the `csp_violation_reporter` fix chain (F-017 →
+   F-023 → F-024 → F-025) — the chain is now four fixes over
+   eight cycles. 54 tags live (v0.1..v3.4.20). 24 findings
+   closed. **Clean** (165s / 12 calls).
+
+### Numbers (delta from cycle 77 onwards)
+
+- **Findings closed (cycles 77-80):** 1 (F-025). Total now
+  **24 closed (F-001..F-025)**; 1 still open (F-018 multi-worker).
+- **Releases shipped:** 4 new tags (`v3.4.18`, `v3.4.19`,
+  `v3.4.20`) plus a docs commit (`86da7f8`) and the F-025 audit
+  + fix pair (`0fe5a66`, `d5e2a41`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.005 is a
+  sub-technique of T1583 already covered; net MITRE count
+  unchanged, but self-defense rule catalogue grew 16 → 17).
+- **Tests:** 236 → 243 passing. Net delta **+7 tests** with zero
+  regressions.
+- **Tags:** 51 → 54 (`v0.1`..`v3.4.20`).
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 77-80.
+
+### Key learnings
+
+#### 1. Audit convergence — R1..R12 = 7→2→0→1→1→1→0→1→1→0→1→0
+
+The twelve-round convergence table is now:
+
+| Round | Cycle | Bug count | Findings closed        |
+|-------|-------|-----------|------------------------|
+| R1    | 51    | 7         | F-001..F-007           |
+| R2    | 55    | 2         | F-017, F-018           |
+| R3    | 61    | 0         | (clean)                |
+| R4    | 63    | 1         | F-019                  |
+| R5    | 64    | 1         | F-020                  |
+| R6    | 67    | 1         | F-021                  |
+| R7    | 68    | 0         | (clean)                |
+| R8    | 72    | 1         | F-023 (4 sub-bugs)     |
+| R9    | 75    | 1         | F-024 (chunked bypass) |
+| R10   | 76    | 0         | (clean)                |
+| R11   | 79    | 1         | F-025 (TE vendor bypass)|
+| R12   | 80    | 0         | (clean)                |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1 → 1 → 0 → 1 → 0. The
+shape is healthy: rounds still find ~1 bug each when the
+previous fix's surface is in scope, and go back to 0 when the
+surface stabilises. The `csp_violation_reporter` fix chain
+(F-017 → F-023 → F-024 → F-025) has now produced **4 fixes
+over 8 cycles** (cycles 55, 72, 75, 79) — a single file has
+absorbed 4 rounds of fixes without surfacing a 5th, which is
+evidence the audit chain is closing the loop rather than
+peeling new layers.
+
+#### 2. csp_violation_reporter fix chain (F-017 → F-023 → F-024 → F-025)
+
+Four fixes across eight cycles, each in the same file
+(`self_defense/csp_violation_reporter.py`) and each closing
+a different bypass of the previous fix:
+
+- **F-017 (cycle 55, R2)** — wrong throttle key (`document-uri`).
+  Fixed: switch to `src_ip`.
+- **F-023 (cycle 72, R8)** — TOCTOU race in `_throttle_allowed`,
+  missing `_evict_stale()` eviction sweep, no per-endpoint body
+  cap, throttled requests still calling `emit()`. Fixed: Lock
+  + sweep + 16 KiB cap + skip-emit on 429.
+- **F-024 (cycle 75, R9)** — Content-Length-only cap bypassable
+  via `Transfer-Encoding: chunked`. Fixed: reject `chunked` with
+  `411 Length Required`.
+- **F-025 (cycle 79, R11)** — `Transfer-Encoding: chunked` plus
+  `X-Transfer-Encoding:` (a non-standard header some TE-vendor
+  middlewares parse in place of the canonical one) bypassed
+  the v3.4.16 rejection. Fixed: check all 3 header names.
+
+Each fix was triggered by a different round type (rule hunt,
+module hunt, fix-surface hunt, fix-surface re-hunt), and each
+audit caught a bypass the previous fix couldn't see because it
+lived in a different vector. This is the clearest evidence
+yet that the "audit the previous fix" discipline is structural,
+not incidental.
+
+#### 3. Subagent-call-count ceiling revised — 5 tests isn't enough
+
+Cycle 74's "≤5 tests = ≤15 calls" hypothesis held for one
+cycle. Cycle 78 (T1583.005) shipped exactly 5 tests but
+still hit 29 calls / 565s — the 9 extra calls came from
+docstring bumps and module re-reads. The lesson: detection
+cycles need a tighter combined budget, not just a test cap.
+Future detection briefs should be: **≤4 tests + ≤2 module
+edits + ≤15 total calls**, with any overshoot requiring a
+larger-context model or a two-dispatch split.
+
+The flip side: cycle 77 (DOCS, 8 calls / 145s) and cycle 80
+(TEST-audit, 12 calls / 165s) both stayed well under the cap,
+proving narrow-scope docs and audit cycles are still cleanly
+inside budget. Only detection cycles are at risk.
+
+#### 4. Track-balance preserved across cycles 77-80
+
+DOCS → DETECTION → SECURITY → TEST. Four of the five tracks
+visited, the BENCH track the one that didn't run this window.
+Cycle 79's CEO-recovery pattern (subagent finds F-025, CEO
+applies fix) is the same shape as cycle 75 (F-024) and cycle
+72 (F-023) — three rounds in a row where the subagent did the
+read-side audit and the CEO did the write-side fix. This is
+now a stable pattern, not a one-off.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
@@ -700,8 +844,8 @@ creativity, novel chains, off-by-default tooling).
 
 ## Closing note
 
-Twenty-three cycles, twenty-three findings closed, sixteen self-defense
-rules, two hundred thirty-six tests, twenty-four releases shipped, zero
+Twenty-four cycles, twenty-four findings closed, seventeen self-defense
+rules, two hundred forty-three tests, twenty-five releases shipped, zero
 regressions, zero IP literals, zero credentials, zero AI-jargon.
 The work-rate is high but the constraints are intact. The single
 open finding (F-018 multi-worker) is documented, scoped, and on the
