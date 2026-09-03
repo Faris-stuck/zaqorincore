@@ -624,6 +624,7 @@ async def post_provision_install_command(
     # temp file, verifies SHA-256 against this constant, then
     # extracts only on match.
     artifact_sha256 = _ARTIFACT_SHA256_BY_OS.get(body.os)
+    warnings: list[str] = []
     if artifact_sha256 is None:
         # Defensive — keeps the endpoint working for unknown OSes
         # but flags the gap so the operator notices.
@@ -709,7 +710,6 @@ async def post_provision_install_command(
 
     digest = artifact_sha256
 
-    warnings: list[str] = []
     if not host.startswith(("zaqorin-", "10.", "192.168.", "172.")):
         warnings.append(
             f"host {host!r} is a public DNS name; the installer "
