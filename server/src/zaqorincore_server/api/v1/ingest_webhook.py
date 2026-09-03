@@ -98,6 +98,11 @@ from ...logging import get_logger
 from ...models import Event, Host
 from ...security import require_api_key
 from ...streams.publisher import publish_event
+# F-028: cap JSON nesting depth to prevent parser DoS via deeply-nested
+# payloads (F-027 sibling). Re-uses the same depth-limited decoder the
+# Cloudflare Logpush endpoint uses. Body-size cap of 1 MiB still applies
+# at the Content-Length check above.
+from ...utils.depth_json import safe_loads
 
 # ---------------------------------------------------------------------------
 # Module-level configuration
@@ -299,9 +304,12 @@ def _translate_sumo_logic(
         msg = rec.get("message")
         if not isinstance(msg, str):
             continue
-        # Try JSON first.
+        # Try JSON first. F-028: cap nesting depth so a deeply-nested
+        # `message` value cannot blow the recursion limit. The
+        # individual `message` field is also bounded by the per-call
+        # string-length cap that the vendor translators apply.
         try:
-            parsed = json.loads(msg)
+            parsed = safe_loads(msg)
         except (ValueError, UnicodeDecodeError):
             parsed = None
         if isinstance(parsed, dict):
@@ -493,8 +501,11 @@ async def ingest_webhook(
         )
 
     # ---- (3) Parse JSON ---------------------------------------------
+    # F-028: use depth-limited JSON decoder (F-027 sibling) so a
+    # 1 MiB body of deeply-nested JSON cannot blow the interpreter
+    # recursion limit and 500 the whole batch.
     try:
-        parsed = json.loads(body)
+        parsed = safe_loads(body.decode("utf-8", errors="replace"))
     except (ValueError, UnicodeDecodeError):
         # Whole-body parse failure: treat as one rejected record.
         raise HTTPException(

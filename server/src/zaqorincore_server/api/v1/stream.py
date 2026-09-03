@@ -69,6 +69,10 @@ from ...schemas.wire import (
 from ...service import event_service, host_service
 from ...service.event_service import DuplicateEvent
 from ...detectors import action_service
+# F-029: depth-limited JSON decoder (shared with F-027/F-028) so a
+# WS frame with deeply-nested JSON cannot blow the interpreter
+# recursion limit.
+from ...utils.depth_json import safe_loads
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -100,9 +104,26 @@ async def ws_agent(ws: WebSocket) -> None:
 
         # --- Step 2: read the agent's reply. It must be a
         # HELLO with the echoed nonce and a valid signature. ---
+        # F-029: cap the HELLO frame size before any further work
+        # so a malicious agent cannot deliver a multi-MiB first
+        # frame and exhaust server RAM. 64 KiB is plenty for a
+        # well-formed HELLO (id + nonce + signature are well
+        # under 1 KiB even with a generous HMAC).
+        MAX_HELLO_BYTES = 64 * 1024
         first_raw = await ws.receive_text()
+        if len(first_raw) > MAX_HELLO_BYTES:
+            std_log.warning(
+                "ws hello oversize: %d > %d",
+                len(first_raw),
+                MAX_HELLO_BYTES,
+            )
+            await ws.close(code=1009)  # 1009 = message too big
+            return
+        # F-029: depth-limited JSON parser so a HELLO with deeply
+        # nested objects cannot blow the interpreter recursion
+        # limit and 500 the worker.
         try:
-            first = json.loads(first_raw)
+            first = safe_loads(first_raw)
         except json.JSONDecodeError:
             std_log.warning("ws first frame not json: %r", first_raw)
             await ws.close(code=1003)  # 1003 = unsupported data
@@ -248,8 +269,13 @@ async def ws_agent(ws: WebSocket) -> None:
                 await ws.close(code=1013)
                 return
 
+            # F-029: depth-limited JSON parse so a deeply-nested
+            # payload cannot blow the recursion limit. The frame
+            # size cap above already bounds total bytes, but a
+            # multi-KiB frame of `[[[...]]]]` is well within the
+            # size budget and still trips CPython recursion.
             try:
-                payload = json.loads(raw)
+                payload = safe_loads(raw)
             except json.JSONDecodeError:
                 std_log.warning("ws frame not json from %s: %r", str(agent_id), raw)
                 continue  # don't kill the connection on a bad line

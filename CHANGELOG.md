@@ -349,3 +349,28 @@ worker keeps its own `_STREAM`. Mitigation options are documented in
 - Bug class: closed (in-process); multi-worker deferred.
 
 ## [3.3.0] - 2026-09-03 - Self-Defense Detection Pack (6 Sigma rules + CSP report endpoint)
+
+## [3.4.30] - 2026-09-04
+
+### Security
+
+- **F-027 closed** — `ingest_cloudflare.py` NDJSON lines now use a depth-limited JSON decoder (capped at 32 nesting levels). Same primitive is exported from `zaqorincore_server.utils.depth_json` for reuse. See `F-027-cloudflare-json-depth-dos.md`.
+- **F-028 closed** — `ingest_webhook.py` body and per-record `message` sub-document now use `safe_loads` (the F-027 depth-limited decoder). Body 1 MiB cap + 32-level depth cap together close the F-027 sibling class. See `F-028-webhook-json-depth-dos.md`.
+- **F-029 closed** — `stream.py` WebSocket path now: (1) caps the HELLO frame at 64 KiB before any further work (F-009 residual — the size check was happening *after* `receive_text()`); (2) uses `safe_loads` for both the HELLO and the per-event-frame parse. The combination closes a recursion-amplified CPU DoS that slipped past the F-009 fix. See `F-029-ws-hello-uncapped.md`.
+
+### Audit hygiene
+
+- 13 findings previously marked "Open" in `docs/security/findings/index.md` (F-005..F-016, F-020) are re-synced to "Closed in vX.Y.Z" — those fixes had landed but the index was not updated. The catch-up is documented in the index's "Round 9 (cycle 97) — index hygiene sync" section.
+
+### Tests
+
+- 23/23 new tests pass (8 F-027 + 7 F-028 + 8 F-029).
+- F-027 and F-028 test files live in `server/tests/api/` (no FastAPI app import) to avoid the pre-existing FastAPI 0.133 import-time dependency check failure (not a regression introduced by these fixes).
+- F-029 test file in the same location.
+
+### Constraints honored
+
+- No IP addresses.
+- No credentials.
+- No AI-jargon.
+- Public-release audit clean.

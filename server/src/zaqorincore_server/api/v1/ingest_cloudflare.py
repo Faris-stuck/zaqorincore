@@ -104,6 +104,17 @@ MAX_BODY_BYTES = 5 * 1024 * 1024
 #: Hard cap on a single NDJSON line. Cloudflare http_requests
 #: records are well under this in practice.
 MAX_LINE_BYTES = 64 * 1024
+# F-027: cap the maximum JSON nesting depth. Implemented in
+# ``zaqorincore_server.utils.depth_json`` so it can be unit-tested
+# without dragging in the FastAPI app surface. The aliases below
+# are kept for any existing import paths.
+from ...utils.depth_json import (  # noqa: E402
+    MAX_JSON_DEPTH,
+    DepthLimitedDecoder as _DepthLimitedDecoder,
+)
+
+# F-027: singleton instance for reuse across the request.
+_depth_decoder = _DepthLimitedDecoder()
 
 #: Hard cap on a single metadata value, in characters. Anything
 #: longer is truncated before persist so a single rogue record
@@ -475,7 +486,7 @@ async def _ingest_ndjson(body: bytes) -> _IngestResult:
                     rejected += 1
                     continue
                 try:
-                    record = json.loads(line)
+                    record = _depth_decoder.decode(line.decode("utf-8", errors="replace"))
                 except (ValueError, UnicodeDecodeError):
                     rejected += 1
                     continue
