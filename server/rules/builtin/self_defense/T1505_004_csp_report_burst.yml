@@ -1,0 +1,41 @@
+title: T1505.004 — CSP report burst from single src_ip (rate-limit probe)
+id: 8f3a9b21-7c14-4e62-b8d1-3d9a4f6e2c70
+status: experimental
+description: |
+  Detects an IP hitting the per-src_ip CSP report rate limit. After
+  the F-017 fix (v3.4.2) the /api/v1/_csp-report endpoint returns
+  HTTP 429 once a single src_ip has submitted more than the budget
+  within the window. A 429 in this stream is therefore signal —
+  someone (browser, bot, attacker) is exhausting the budget. The
+  rule fires on the first 429; in practice a real attack or
+  runaway browser will produce a small burst within seconds.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.initial_access
+  - attack.t1505
+  - attack.server_software_component
+logsource:
+  product: zaqorincore
+  service: webui
+detection:
+  selection:
+    event_type: csp.violation
+    status: 429
+  condition: selection
+  timeframe: 5m
+  count: 1
+fields:
+  - src_ip
+  - document_uri
+  - violated_directive
+  - status
+falsepositives:
+  - Operator manually testing CSP from a single browser session (whitelist their src_ip)
+  - Browser extension that emits many CSP reports on first load
+  - Automated scanner sweep that hits the endpoint and triggers its own 429
+level: medium
+mapped_finding: F-017

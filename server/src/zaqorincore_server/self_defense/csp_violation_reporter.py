@@ -1,4 +1,4 @@
-"""CSP violation report endpoint (ZaqorinCore v3.3.0).
+"""CSP violation report endpoint (ZaqorinCore v3.3.0, F-017 fixed v3.4.2).
 
 Browsers fire ``Content-Security-Policy-Report-Only`` and
 ``Report-To`` reports to whatever URL is declared in the CSP
@@ -13,15 +13,26 @@ The endpoint is intentionally minimal:
   additional per-src_ip 10/min cap (the rate-limit middleware
   buckets per API key; browsers do not send keys).
 * Returns 204 on success so the browser stops retrying.
+
+F-017 fix (cycle 58): the throttle is now keyed by the request's
+source IP (``request.client.host``) rather than the report body's
+``document-uri``. Keying on ``document-uri`` allowed an attacker
+to bypass the budget by submitting one report per unique
+``document-uri``. Operators running behind a proxy that injects
+``X-Forwarded-For`` can opt into the forwarded header by setting
+``ZAQORIN_SRC_IP_HEADER`` to its canonical name (default behaviour
+remains the FastAPI ``Request.client.host``).
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import time
 from collections import deque
 from typing import Any
 
-from fastapi import APIRouter, Response as FastAPIRawResponse
+from fastapi import APIRouter, Request, Response as FastAPIRawResponse
 from pydantic import BaseModel, Field
 
 from . import emit
@@ -72,6 +83,31 @@ def _throttle_allowed(src_ip: str, now: float) -> bool:
     return True
 
 
+def _resolve_src_ip(request: Request) -> str:
+    """Determine the source IP for throttling and event metadata.
+
+    Precedence:
+
+    1. The header named by ``ZAQORIN_SRC_IP_HEADER`` if the operator
+       configured one (commonly ``X-Forwarded-For`` behind a trusted
+       reverse proxy).
+    2. Otherwise ``request.client.host`` (the FastAPI default).
+    3. Final fallback ``"<unknown>"`` so the throttle dict never
+       keys on ``None``.
+    """
+    configured = os.environ.get("ZAQORIN_SRC_IP_HEADER", "").strip()
+    if configured:
+        raw = request.headers.get(configured)
+        if raw:
+            # X-Forwarded-For may carry a comma-separated chain;
+            # the left-most entry is the originating client.
+            return raw.split(",", 1)[0].strip() or "<unknown>"
+    host = getattr(request.client, "host", None) if request.client else None
+    if host:
+        return host
+    return "<unknown>"
+
+
 @router.post(
     "/_csp-report",
     status_code=204,
@@ -80,35 +116,26 @@ def _throttle_allowed(src_ip: str, now: float) -> bool:
 )
 async def receive_csp_report(
     payload: dict[str, Any],
+    request: Request,
 ) -> FastAPIRawResponse:
     """Accept either the legacy CSP envelope or the new flat shape.
 
     No auth, no body persistence — the report is normalized to a
     ``ZaqorinEvent`` and pushed into the in-process stream so the
-    Sigma engine can correlate it against T1505.003.
+    Sigma engine can correlate it against T1505.003 / T1505.004.
     """
-    import time
-
-    # We do not have access to ``Request`` here without changing
-    # the signature; the throttle is keyed by the document-uri
-    # host (best-effort anti-abuse). Operators wanting stronger
-    # source-IP binding should front this endpoint with a proxy
-    # that injects ``X-Forwarded-For`` and use the
-    # ``src_ip_header`` config (out of scope here).
-    document_uri = ""
-    if isinstance(payload.get("csp-report"), dict):
-        document_uri = str(payload["csp-report"].get("document-uri") or "")
-    elif isinstance(payload.get("document-uri"), str):
-        document_uri = payload["document-uri"]
-    key = document_uri or "<unknown>"
-
+    src_ip = _resolve_src_ip(request)
     now = time.time()
-    if not _throttle_allowed(key, now):
+    if not _throttle_allowed(src_ip, now):
+        # Emit a throttled event so T1505.004 (CSP report burst)
+        # can detect the rate-limit probe itself.
+        event = ZaqorinEvent.from_csp_report(payload, src_ip=src_ip, status=429)
+        emit(event)
         return FastAPIRawResponse(status_code=429, content=b"")
 
-    event = ZaqorinEvent.from_csp_report(payload)
+    event = ZaqorinEvent.from_csp_report(payload, src_ip=src_ip, status=204)
     emit(event)
-    return FastAPIRawResponse(status_code=204)
+    return FastAPIRawResponse(status_code=204, content=b"")
 
 
-__all__ = ["router", "CspReportIn", "receive_csp_report"]
+__all__ = ["router", "CspReportIn", "receive_csp_report", "_resolve_src_ip"]

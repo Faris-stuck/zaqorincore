@@ -159,12 +159,24 @@ class ZaqorinEvent:
         )
 
     @classmethod
-    def from_csp_report(cls, body: dict[str, Any]) -> ZaqorinEvent:
+    def from_csp_report(
+        cls,
+        body: dict[str, Any],
+        *,
+        src_ip: str | None = None,
+        status: int | None = None,
+    ) -> ZaqorinEvent:
         """Build from a CSP violation report body.
 
         The browser sends either the legacy
         ``application/csp-report`` envelope (key ``csp-report``)
         or the newer ``report-to`` flat shape. We accept both.
+
+        ``src_ip`` and ``status`` are filled in by the HTTP
+        middleware (see ``csp_violation_reporter._resolve_src_ip``)
+        so the Sigma engine can correlate on either signal.
+        ``status`` is the HTTP status we returned — 204 for
+        accepted, 429 for throttled.
         """
         inner: dict[str, Any] = body
         if isinstance(body.get("csp-report"), dict):
@@ -187,6 +199,9 @@ class ZaqorinEvent:
         return cls(
             ts=cls._now_iso(),
             event_type="csp.violation",
+            src_ip=src_ip,
+            route="/api/v1/_csp-report",
+            status=status,
             violated_directive=violated or None,
         )
 
