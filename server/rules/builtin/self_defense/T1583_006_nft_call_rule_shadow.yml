@@ -1,0 +1,47 @@
+title: T1583.006 — nft.call rule shadowing (CWE-285)
+id: 68919086-9167-4d7d-b783-8a283304c5f0
+status: experimental
+description: |
+  An nftables call whose rule comes before an existing operator rule with
+  higher priority (lower hook priority number). Indicates the operator's
+  policy is being shadowed by an attacker-controlled rule that never
+  matches — the shadowed rule is structurally unreachable under the
+  current rule ordering, so the attacker can effectively neuter a deny
+  without touching the operator's rule file.
+
+  The runner projects a boolean metadata flag (rule_shadowed: true)
+  onto every nft.call event so this rule stays a single-event Sigma rule
+  and matches the engine's supported condition patterns (ADR-010).
+
+  Maps to F-8 from AUDIT-2026-09-03 (Acquired Infrastructure —
+  firewall shadowed via rule reordering).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+    rule_shadowed: true
+  filter_rule_shadowed:
+    rule_shadowed: false
+  condition: selection and not filter_rule_shadowed
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+  - shadowed_rule
+  - shadowed_by_rule
+  - priority_delta
+falsepositives:
+  - Operator testing
+level: high
