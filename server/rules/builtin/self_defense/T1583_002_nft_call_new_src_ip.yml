@@ -1,0 +1,46 @@
+title: T1583.002 — nft.call from new src_ip (24h baseline)
+id: 7f56ebfe-34bc-4697-bdd6-abb814cf1ffa
+status: experimental
+description: |
+  Detects an nftables call originating from a source IP that has not
+  issued any nft.call in the previous 24 hours. A benign deployment
+  has a stable set of operator hosts; a previously-unseen IP raising
+  nftables calls may indicate a compromised credential, lateral
+  movement from a new foothold, or an unauthorized operator
+  workstation connecting to the agent.
+
+  The 24h baseline is computed by the runner; the rule consumes a
+  pre-computed `new_src_ip: true` metadata flag so this rule stays
+  a single-event Sigma rule and matches the engine's supported
+  condition patterns (ADR-010).
+
+  Maps to F-4 from AUDIT-2026-09-03 (Acquired Infrastructure —
+  new endpoint).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_known_src_ip:
+    new_src_ip: false
+  condition: selection and not filter_known_src_ip
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+falsepositives:
+  - Operator traveling and reconnecting from a new ISP address
+  - Ephemeral cloud egress IPs behind a NAT
+  - Operator workstation that has been offline longer than the 24h baseline
+level: medium
