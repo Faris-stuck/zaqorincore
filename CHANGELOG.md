@@ -1,5 +1,47 @@
 ## [3.2.1] - 2026-09-03 - Security: WS auth, secret file perms, SOAR SSRF, nft input validation
 
+
+## [3.2.2] - 2026-09-03 - Security: auth on stats/version, whoami redaction, persistent audit log, ingest audit hooks
+
+v3.2.2 ships the second batch of fixes from the v3.2.0 self-hunt
+(AUDIT-2026-09-03). Five Medium findings addressed:
+
+### Security fixes
+
+- **F-005 (Low)** — `app.version` now reads from package metadata
+  (`importlib.metadata.version("zaqorincore-server")`) instead of a
+  hardcoded literal. The drift between source-of-truth `pyproject.toml`
+  and the `/api/v1/version` payload is gone.
+- **F-006 (Medium, CWE-200)** — `/api/v1/version` and `/api/v1/stats`
+  now require `Role.READ`. An unauthenticated probe gets 401. Version
+  string, git SHA, and agent count are no longer publicly scrapable.
+- **F-008 (Medium, CWE-778)** — Audit log gains a persistent tier.
+  When `ZAQORIN_AUDIT_LOG_DIR` is set, every audit entry is also
+  appended to `audit-YYYY-MM-DD.jsonl` rotated daily. The in-memory
+  ring buffer is kept as a fast fallback. Default (env unset):
+  in-memory only, same as v3.2.1.
+- **F-012 (Low, CWE-200)** — `/auth/whoami` omits `dev_mode` and
+  `configured_roles` from the production response. In development
+  (`ZAQORIN_ENV=development`) the dev-mode flag remains visible so
+  the local operator can verify configuration.
+- **F-013 (Low, CWE-778)** — Ingest endpoints
+  (`/api/v1/ingest/cloudflare`, `/api/v1/ingest/webhook`) and the
+  source-connector `POST/DELETE` handlers now call `audit.record()`.
+  Every accepted event leaves a trace.
+
+### Operational notes
+
+- Set `ZAQORIN_AUDIT_LOG_DIR` to enable persistent audit (recommended
+  for any deployment that needs forensic continuity across restarts).
+- API clients that hit `/api/v1/version` or `/api/v1/stats` without
+  an API key will now get 401. Update dashboards accordingly.
+- No detection or detection-coverage changes; public surface for
+  detection is identical to v3.2.0 / v3.2.1 (T1583.001, 17/200 MITRE).
+
+### Tests
+
+- `tests/test_security_v3_2_2.py` covers all 5 fixes.
+- Pre-existing tests unchanged.
 v3.2.1 is an emergency security patch that addresses four
 findings from the v3.2.0 self-hunt. No detection or
 detection-coverage changes; the public detection surface is

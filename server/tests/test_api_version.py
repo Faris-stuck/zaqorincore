@@ -31,13 +31,22 @@ async def test_api_v1_version_shape(app_client: AsyncClient) -> None:
 async def test_api_v1_version_reflects_app_version(app_client: AsyncClient) -> None:
     """version field mirrors app.version set in main.create_app.
 
-    Bumping the version in main.py must flow through to this
-    endpoint without any extra wiring — that's the whole point
-    of reading it off the FastAPI constructor.
+    v3.2.2 (F-005 fix): the version is now read from package
+    metadata (``importlib.metadata.version("zaqorincore-server")``)
+    so the endpoint always reflects pyproject.toml without a
+    separate edit in main.create_app.
     """
+    from importlib.metadata import version as _pkg_version
+
+    expected = _pkg_version("zaqorincore-server")
     r = await app_client.get("/api/v1/version")
     body = r.json()
-    assert body["version"] == "2.8.0"
+    assert body["version"] == expected
+    # Sanity check: the installed package version must be a
+    # non-empty string. If the package is uninstalled in some
+    # future change this test will surface it as a missing
+    # import instead of a silent body["version"] == "".
+    assert expected
 
 
 async def test_api_v1_version_no_build_info_file(

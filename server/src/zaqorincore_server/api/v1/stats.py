@@ -49,14 +49,22 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
+from ...auth import Role, require_role
 from ...dispatcher import registry as agent_registry
 from .healthcheck import _count_yml_files
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1")
+# F-006 fix (v3.2.2): gate the operator dashboard counters behind
+# ``require_role(READ)`` so an unauthenticated probe gets 401 instead
+# of the running version, git SHA, pid, and connected-agent count.
+# The WebUI still reaches the endpoint via its own auth context.
+router = APIRouter(
+    prefix="/api/v1",
+    dependencies=[Depends(require_role(Role.READ))],
+)
 
 # Default location of the bundled builtin rule pack. Mirrors the
 # cycle-30 healthcheck resolution so the two endpoints agree on

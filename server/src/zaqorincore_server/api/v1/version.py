@@ -36,11 +36,20 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+
+from ...auth import Role, require_role
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1")
+# F-006 fix (v3.2.2): gate the operator build-identity endpoint
+# behind ``require_role(READ)`` so an unauthenticated probe gets
+# 401 instead of the running version + git SHA. Operators can still
+# see the data from the WebUI or via ``curl -H 'X-API-Key: ...'``.
+router = APIRouter(
+    prefix="/api/v1",
+    dependencies=[Depends(require_role(Role.READ))],
+)
 
 # Default location of the build-info file. Resolved relative to
 # this file (server/src/zaqorincore_server/api/v1/) so it works

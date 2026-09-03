@@ -82,6 +82,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ... import audit
+from ...auth import current_role
 from ...db import get_session
 from ...logging import get_logger
 from ...models import SourceConnector
@@ -619,6 +621,19 @@ async def create_cloudflare(
         connector_id=str(connector.id),
         zone_id=body.zone_id,
     )
+    # F-013 fix (v3.2.2): write an audit entry for every successful
+    # source-connector create so an operator can reconstruct who
+    # registered which upstream. The actor comes from the role
+    # resolved by ``require_role`` on the router; in dev mode
+    # ``current_role`` returns ``None`` and we record ``"anonymous"``
+    # rather than skipping the entry.
+    role = current_role(request)
+    audit.record(
+        actor=role.value if role is not None else "anonymous",
+        action="create source (cloudflare)",
+        target=str(connector.id),
+        extra={"zone_id": body.zone_id, "datasets": list(body.datasets)},
+    )
     return out
 
 
@@ -680,6 +695,14 @@ async def create_aws(
         connector_id=str(connector.id),
         log_group=body.log_group,
     )
+    # F-013 fix (v3.2.2): audit hook — see create_cloudflare.
+    role = current_role(request)
+    audit.record(
+        actor=role.value if role is not None else "anonymous",
+        action="create source (aws)",
+        target=str(connector.id),
+        extra={"log_group": body.log_group},
+    )
     return out
 
 
@@ -739,6 +762,14 @@ async def create_webhook(
         "sources: created webhook connector",
         connector_id=str(connector.id),
         format=body.format,
+    )
+    # F-013 fix (v3.2.2): audit hook — see create_cloudflare.
+    role = current_role(request)
+    audit.record(
+        actor=role.value if role is not None else "anonymous",
+        action="create source (webhook)",
+        target=str(connector.id),
+        extra={"format": body.format},
     )
     return out
 
@@ -810,6 +841,14 @@ async def create_syslog(
         host=body.host,
         port=body.port,
         protocol=body.protocol,
+    )
+    # F-013 fix (v3.2.2): audit hook — see create_cloudflare.
+    role = current_role(request)
+    audit.record(
+        actor=role.value if role is not None else "anonymous",
+        action="create source (syslog)",
+        target=str(connector.id),
+        extra={"host": body.host, "port": body.port, "protocol": body.protocol},
     )
     return out
 
@@ -1087,17 +1126,28 @@ async def rotate_key(
 )
 async def delete_connector(
     connector_id: uuid.UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Remove a connector. Counters and history are dropped with
     it — there is no soft-delete."""
     connector = await _get_connector(session, connector_id)
+    connector_id_str = str(connector.id)
+    platform = connector.platform
     await session.delete(connector)
     await session.commit()
     log.info(
         "sources: deleted",
-        connector_id=str(connector.id),
-        platform=connector.platform,
+        connector_id=connector_id_str,
+        platform=platform,
+    )
+    # F-013 fix (v3.2.2): audit hook — see create_cloudflare.
+    role = current_role(request)
+    audit.record(
+        actor=role.value if role is not None else "anonymous",
+        action="delete source",
+        target=connector_id_str,
+        extra={"platform": platform},
     )
 
 

@@ -92,6 +92,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from ... import audit
 from ...db import get_session_factory
 from ...logging import get_logger
 from ...models import Event, Host
@@ -542,6 +543,20 @@ async def ingest_webhook(
         records=records,
         source=detected_source,
         vendor=vendor or header_source or "generic",
+    )
+    # F-013 fix (v3.2.2): audit hook — see ingest_cloudflare for
+    # rationale. Log AFTER persistence so a partial-commit never
+    # counts as an accepted batch.
+    audit.record(
+        actor="webhook",
+        action="ingest webhook",
+        target=detected_source,
+        status=200,
+        extra={
+            "accepted": result.accepted,
+            "rejected": result.rejected,
+            "vendor": vendor or header_source or "generic",
+        },
     )
     return IngestAck(
         accepted=result.accepted,

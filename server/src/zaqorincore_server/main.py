@@ -17,6 +17,19 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+try:
+    from importlib.metadata import version as _pkg_version
+
+    # Single source of truth for the app version: pyproject.toml.
+    # ``app.version`` then flows through /api/v1/version and
+    # /api/v1/stats. If the package metadata is missing (e.g. a
+    # source-only checkout, editable install quirks), fall back to
+    # a sentinel rather than crashing app startup. Operators see
+    # the version string and never crash.
+    _APP_VERSION = _pkg_version("zaqorincore-server")
+except Exception:  # noqa: BLE001
+    _APP_VERSION = "0.0.0+unknown"
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -121,7 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ZaqorinCore Server",
-        version="3.2.0",
+        version=_APP_VERSION,
         description=(
             "Central server for ZaqorinCore. Accepts WebSocket streams "
             "from zaqorin-agent, persists events to PostgreSQL, runs "

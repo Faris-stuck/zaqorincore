@@ -77,6 +77,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ... import audit
 from ...db import get_session_factory
 from ...logging import get_logger
 from ...models import Event, Host
@@ -427,6 +428,21 @@ async def ingest_cloudflare_logpush(
 
     # ---- (4) Parse + persist ----------------------------------------
     result = await _ingest_ndjson(bytes(body))
+    # F-013 fix (v3.2.2): audit hook — record every successful ingest
+    # batch so operators can correlate upstream pushes with downstream
+    # persistence. We log AFTER persistence so a partial-commit
+    # never counts as an accepted batch.
+    audit.record(
+        actor="cloudflare_logpush",
+        action="ingest cloudflare",
+        target=str(_LOGPUSH_HOST_ID),
+        status=200,
+        extra={
+            "accepted": result.accepted,
+            "rejected": result.rejected,
+            "source": SourceCloudflareLogpush,
+        },
+    )
     return IngestAck(accepted=result.accepted, rejected=result.rejected)
 
 

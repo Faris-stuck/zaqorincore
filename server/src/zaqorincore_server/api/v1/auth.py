@@ -10,17 +10,33 @@ load to decide whether to show admin-only controls (e.g. the
 The endpoint is itself protected by ``require_role`` so an
 unauthenticated caller gets 401, not 200. In dev mode (no keys
 configured) the dependency is a no-op and the response reports
-``role: "write"`` with ``dev_mode: true`` so the dashboard can
-still render an admin view during local development.
+``role: "write"`` so the dashboard can still render an admin
+view during local development.
+
+F-012 fix (v3.2.2)
+==================
+
+The original payload also returned ``dev_mode`` and the full
+``configured_roles`` list. Both leak state to a half-trusted
+operator (a ``read``-role user, or a support engineer debugging
+the dashboard) that does not need to know whether the server
+is running with no keys at all. The redacted payload returns
+only ``role`` to the caller. The dev-mode flag is still used
+inside the server (other modules branch on it) — only the
+network-visible surface is shrunk. When the server is started
+with ``ZAQORIN_ENV=development``, the ``dev_mode`` flag is
+included so a developer on localhost can verify which mode the
+process booted in.
 """
 
 from __future__ import annotations
+
+import os
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ...auth import Role, require_role
-from ...config import get_settings
 
 router = APIRouter(
     prefix="/api/v1/auth",
@@ -33,14 +49,16 @@ class WhoAmIOut(BaseModel):
     """Response body for ``GET /api/v1/auth/whoami``.
 
     ``role`` is the resolved role (``read`` / ``write`` / ``ingest``).
-    In dev mode (no API keys configured), ``dev_mode`` is true and
-    ``role`` reports ``write`` so the dashboard can render the
-    admin view.
+
+    ``dev_mode`` is ONLY present when the process was started with
+    ``ZAQORIN_ENV=development``. Production callers do not need to
+    know that the server is running with no API keys configured —
+    a leaked ``dev_mode: true`` from a remote deployment is exactly
+    the recon signal F-012 documents.
     """
 
     role: Role
-    dev_mode: bool
-    configured_roles: list[Role]
+    dev_mode: bool | None = None
 
 
 @router.get("/whoami", response_model=WhoAmIOut)
@@ -51,31 +69,15 @@ async def whoami(role: Role = Depends(require_role)) -> WhoAmIOut:
     this handler) but FastAPI caches the result within a single
     request so the lookup only happens once.
     """
-    settings = get_settings()
-    configured: list[Role] = []
-    if settings.api_key_read:
-        configured.append(Role.READ)
-    if settings.api_key_write:
-        configured.append(Role.WRITE)
-    if settings.api_key_ingest:
-        configured.append(Role.INGEST)
-    legacy = bool(settings.api_key and settings.api_key not in {
-        settings.api_key_read,
-        settings.api_key_write,
-        settings.api_key_ingest,
-    })
-    dev_mode = not (
-        settings.api_key
-        or settings.api_key_read
-        or settings.api_key_write
-        or settings.api_key_ingest
-    )
-    if legacy and Role.WRITE not in configured:
-        configured.append(Role.WRITE)
+    # F-012 fix (v3.2.2): only surface ``dev_mode`` to a process
+    # booted with ``ZAQORIN_ENV=development``. The full
+    # ``configured_roles`` list is intentionally NOT exposed to
+    # the caller — knowing which roles are configured lets an
+    # attacker map the auth surface without owning a key.
+    is_dev_env = os.environ.get("ZAQORIN_ENV", "production") == "development"
     return WhoAmIOut(
         role=role,
-        dev_mode=dev_mode,
-        configured_roles=configured,
+        dev_mode=True if is_dev_env else None,
     )
 
 
