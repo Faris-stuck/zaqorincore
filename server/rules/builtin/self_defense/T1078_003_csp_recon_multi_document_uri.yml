@@ -1,0 +1,48 @@
+title: "T1078.003 — CSP recon: same src_ip across many distinct document-uri"
+id: 857e0f75-e874-4553-8387-637f87320a4e
+status: experimental
+description: |
+  A benign browser session reports CSP violations from one or two
+  document-uri values (the page the user is on, plus perhaps a
+  redirect target). An attacker or scanner probing the
+  /api/v1/_csp-report endpoint mints synthetic reports with many
+  distinct document-uri values to test whether the rate limiter,
+  deduplicator, or alert correlator treats them as separate sessions.
+
+  The rule fires when a single src_ip submits 5 or more CSP reports
+  whose document-uri values span 5+ distinct hosts/paths within 60s.
+  That cardinality is unreachable from normal browser traffic and is
+  characteristic of automated fingerprinting or recon.
+
+  Maps to F-018 (CSP-endpoint recon surface, AUDIT-2026-09-03).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.initial_access
+  - attack.t1078
+  - attack.valid_accounts
+logsource:
+  product: zaqorincore
+  service: webui
+detection:
+  selection:
+    event_type: csp.violation
+  condition: selection
+  timeframe: 60s
+  count: 5
+  by: src_ip
+  distinct: document_uri
+fields:
+  - src_ip
+  - document_uri
+  - violated_directive
+  - blocked_uri
+falsepositives:
+  - Multi-tab browsing on a single host that loads many distinct paths (operator can whitelist their network)
+  - Single-page applications with many client-side routes all emitting CSP reports
+  - Web testing suites (Selenium, Playwright) iterating over a document corpus
+level: medium
+mapped_finding: F-018

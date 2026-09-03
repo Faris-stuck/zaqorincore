@@ -24,7 +24,9 @@ self-defense hits as **infrastructure emergencies**, not regular alerts.
 | [T1098.001](T1098_001_audit_log_gap.md) | Audit log JSONL persistence silently disabled | [T1098](https://attack.mitre.org/techniques/T1098/) | High | F-008 v3.2.1 |
 | [T1505.003](T1505_003_csp_violation.md) | WebUI CSP violation (blocked inline script or style) | [T1505](https://attack.mitre.org/techniques/T1505/) | Medium | F-007 / F-016 v3.2.1 |
 | [T1505.004](T1505_004_csp_report_burst.md) | CSP report burst from single src_ip (rate-limit probe) | [T1505](https://attack.mitre.org/techniques/T1505/) | Medium | F-017 v3.4.3 |
+| [T1505.005](T1505_005_csp_report_no_blocked_uri.md) | CSP report missing blocked-uri (malformed probe) | [T1505](https://attack.mitre.org/techniques/T1505/) | Low | F-017 v3.4.3 (follow-up) |
 | [T1499.004](T1499_004_ws_dos.md) | WS frame size or rate limit exceeded | [T1499.004](https://attack.mitre.org/techniques/T1499/004/) | High | F-009 v3.2.1 |
+| [T1078.003](T1078_003_csp_recon_multi_document_uri.md) | CSP recon: same src_ip across many distinct document-uri | [T1078](https://attack.mitre.org/techniques/T1078/) | Medium | F-018 |
 | [T1485.001](T1485_001_nft_invalid_table_chain.md) | nft binary called with non-whitelisted table/chain | [T1485](https://attack.mitre.org/techniques/T1485/) | High | F-4 v3.2.1 |
 | [T1078.002](T1078_002_hmac_replay_multi_ip.md) | shared_secret HMAC auth from new src_ip | [T1078](https://attack.mitre.org/techniques/T1078/) | High | F-1 v3.2.1 |
 | [T1190.002](T1190_002_hmac_challenge_bruteforce.md) | WS HMAC challenge failures burst from single src_ip | [T1190](https://attack.mitre.org/techniques/T1190/) | Medium | F-1 v3.2.1 |

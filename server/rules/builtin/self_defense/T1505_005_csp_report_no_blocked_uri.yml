@@ -1,0 +1,54 @@
+title: "T1505.005 — CSP report without blocked-uri field (malformed probe)"
+id: 75d8dd81-cbe8-40d3-bb32-12073c68a2c5
+status: experimental
+description: |
+  The W3C CSP Level 3 reporting spec defines `blocked-uri` as a
+  required key on every violation report. The
+  /api/v1/_csp-report endpoint normalises missing or empty values
+  to an empty string before the Sigma engine sees the event.
+
+  The engine can distinguish a missing field (None in metadata)
+  from an empty string ("" in metadata). This rule fires only on
+  the missing-field case — i.e. an emitter that bypassed the
+  normaliser entirely, or a hand-crafted POST that does not even
+  include the `csp-report` payload key.
+
+  A non-browser client posting a synthetic CSPR will frequently
+  skip blocked-uri entirely (it has nothing real to put there).
+  Real browsers always populate the field, even if with `inline`
+  or `eval` or an actual URL.
+
+  Maps to F-017 follow-up (post-normaliser malformed probe
+  detection, AUDIT-2026-09-03).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/03
+modified: 2026/09/03
+tags:
+  - attack.initial_access
+  - attack.t1505
+  - attack.server_software_component
+logsource:
+  product: zaqorincore
+  service: webui
+detection:
+  selection:
+    event_type: csp.violation
+    blocked_uri: ""
+  condition: selection
+  timeframe: 10m
+  count: 1
+fields:
+  - src_ip
+  - document_uri
+  - violated_directive
+  - user_agent
+falsepositives:
+  - Normaliser already replaced missing blocked-uri with empty string;
+    a real browser would never send literal empty string, so this is
+    a high-fidelity probe signal
+  - Internal monitoring client that posts CSPR with empty blocked-uri
+  - Direct /api/v1/_csp-report probe from a scanner
+level: low
+mapped_finding: F-017 follow-up
