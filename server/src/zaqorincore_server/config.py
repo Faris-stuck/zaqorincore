@@ -129,6 +129,27 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_per_min: int = Field(default=120, ge=1, le=1_000_000)
 
+    # --- CORS allowlist (v3.2.3, F-010) ---
+    # Comma-separated list of origins permitted to call the API from
+    # a browser. Default empty = no CORS headers emitted, which means
+    # browsers reject cross-origin XHR/fetch (the safe default). When
+    # the operator dashboard lives on a separate domain, set this to
+    # that origin (e.g. "https://console.example.com"). Wildcard "*"
+    # is rejected at startup when ``allow_credentials`` would also be
+    # true (it is never true here, but the check is enforced).
+    cors_origins: str = ""
+
+    # --- WebSocket DoS hardening (v3.2.3, F-009) ---
+    # Reject any single WS frame larger than this. 1 MiB is well above
+    # the largest legitimate event payload the server has ever seen
+    # (~10 KiB) but small enough to keep memory bounded against a
+    # flood. Lower for tighter environments; raise only with care.
+    ws_max_msg_bytes: int = Field(default=1024 * 1024, ge=1024, le=16 * 1024 * 1024)
+    # Cap the message rate per WS connection. 100 msg/min = 1.7 msg/s
+    # sustained, ~50x the steady-state ingest rate of a single agent.
+    # Sustained overage drops the connection with code 1013.
+    ws_max_msg_per_min: int = Field(default=100, ge=1, le=10_000)
+
 
 _settings: Settings | None = None
 

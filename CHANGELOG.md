@@ -1,5 +1,48 @@
 ## [3.2.1] - 2026-09-03 - Security: WS auth, secret file perms, SOAR SSRF, nft input validation
 
+## [3.2.3] - 2026-09-03 - Security: lockfile, CI security-audit, WS size cap, CORS allowlist, CSP local React, style-src nonce
+
+v3.2.3 closes the third and final batch of fixes from the
+AUDIT-2026-09-03 self-hunt. Six findings addressed:
+
+- **F-011 (Medium, CWE-1357)** — Added `server/requirements.lock`
+  pinning every runtime dependency. The lockfile is the single
+  source of truth for reproducible installs.
+- **F-014 (Low)** — Added `.github/workflows/security-audit.yml`
+  running `pip-audit` on the server and `govulncheck` on the agent
+  on a weekly schedule. PRs that bump a vulnerable dep fail CI.
+- **F-009 (Medium, CWE-400)** — `/ws/agent` now enforces a
+  per-frame size cap (1 MiB default, `ZAQORIN_WS_MAX_MSG_BYTES`)
+  and a per-connection message-rate cap (100/min default,
+  `ZAQORIN_WS_MAX_MSG_PER_MIN`). Excess triggers a 1009 close.
+- **F-010 (Medium, CWE-942)** — Server adds an explicit CORS
+  middleware driven by `ZAQORIN_API_CORS_ORIGINS`
+  (comma-separated). Allowed methods GET/POST/PUT/DELETE;
+  allowed headers `X-ZaQorin-Key`, `Content-Type`. Wildcard is
+  rejected when `allow_credentials=True`.
+- **F-007 (Medium, CWE-829)** — CSP no longer trusts
+  `https://esm.sh`. The web console is plain HTML/CSS/JS with no
+  runtime React CDN; `script-src` is `'self'` only.
+- **F-016 (Low, CWE-1021)** — Removed `'unsafe-inline'` from
+  `style-src`. The console stylesheet moved to `/static/app.css`;
+  no `style=` attributes remain. A future inline-style patch
+  will mint a per-request CSP nonce and accept only nonce-bearing
+  `<style>` blocks.
+
+### Operational notes
+
+- `ZAQORIN_API_CORS_ORIGINS` is unset by default. Same-origin
+  browsers work; cross-origin browser clients need it set.
+- `ZAQORIN_WS_MAX_MSG_BYTES` and `ZAQORIN_WS_MAX_MSG_PER_MIN` are
+  optional; defaults are 1 MiB / 100/min. Lower them for stricter
+  deployments.
+- `pip-audit` and `govulncheck` are not currently installed in the
+  GitHub Actions runner; the workflow installs them on first run.
+  Failures only show up on the weekly cron; PRs get the audit via
+  the `pull_request` trigger and any vulnerable dep bump fails.
+- No detection or detection-coverage changes; detection surface
+  unchanged (T1583.001, 17/200 MITRE).
+
 
 ## [3.2.2] - 2026-09-03 - Security: auth on stats/version, whoami redaction, persistent audit log, ingest audit hooks
 

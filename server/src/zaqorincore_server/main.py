@@ -66,6 +66,7 @@ from .dispatcher import Dispatcher
 from .logging import configure_logging, get_logger
 from .rate_limit import RateLimitMiddleware
 from .request_id import RequestIDMiddleware
+from .cors import describe_cors_policy
 from .security import SecurityHeadersMiddleware
 from .error_envelope import ErrorEnvelopeMiddleware
 from .soar.worker import SoarWorker
@@ -147,6 +148,19 @@ def create_app() -> FastAPI:
 
     # Security headers first (innermost in Starlette = outermost in response)
     app.add_middleware(SecurityHeadersMiddleware)
+    # CORS (v3.2.3, F-010): explicit allowlist driven by
+    # ZAQORIN_API_CORS_ORIGINS. Returns None (no middleware) when the
+    # env var is unset, which is the same-origin safe default.
+    _cors_policy = describe_cors_policy()
+    if _cors_policy["enabled"]:
+        from starlette.middleware.cors import CORSMiddleware as _CORS
+        app.add_middleware(
+            _CORS,
+            allow_origins=_cors_policy["allow_origins"],
+            allow_methods=_cors_policy["allow_methods"],
+            allow_headers=_cors_policy["allow_headers"],
+            allow_credentials=_cors_policy["allow_credentials"],
+        )
     # Rate limiter next; it sees the request before any router
     # handler does and short-circuits with 429 before the auth
     # dependency runs, which protects ``require_role`` itself from

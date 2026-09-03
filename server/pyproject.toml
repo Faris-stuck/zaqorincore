@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zaqorincore-server"
-version = "3.2.2"
+version = "3.2.3"
 description = "ZaqorinCore central server — FastAPI app that accepts agent WebSocket streams, persists events to PostgreSQL, fans out through Redis Streams, runs Sigma-compatible detection, and emits SOAR actions."
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,14 +25,16 @@ classifiers = [
 ]
 dependencies = [
     # Web framework
-    "fastapi>=0.115,<0.117",
-    "uvicorn[standard]>=0.32,<0.34",
+    # F-011: upper bounds widened to match requirements.lock.
+    # CI security-audit (F-014) gates new ranges via pip-audit.
+    "fastapi>=0.115,<0.134",
+    "uvicorn[standard]>=0.32,<0.42",
     "websockets>=15,<16",
     # Config + validation
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
     # Database
-    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "sqlalchemy[asyncio]>=0.36,<2.1",
     "asyncpg>=0.30,<0.31",
     "alembic>=1.14,<2",
     # Redis

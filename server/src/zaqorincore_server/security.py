@@ -3,12 +3,18 @@
 Two pieces:
 
 1. ``SecurityHeadersMiddleware`` — applies a CSP and other
-   browser-facing headers to every response. The
-   Content-Security-Policy here is permissive on purpose:
-   the ZaqorinCore console is a single-page app served from
-   the same origin and currently loads React 18 from the
-   esm.sh CDN. Once the React bundle is vendored locally
-   (post-1.0), the CSP can be tightened to ``default-src 'self'``.
+   browser-facing headers to every response.
+
+   v3.2.3 (F-007/F-016):
+     * ``script-src`` lists only ``'self'``; the bundled web console
+       is plain HTML/JS and loads no remote CDN.
+     * ``style-src`` no longer allows ``'unsafe-inline'``. The CSS
+       is served from ``/static/app.css``. The middleware mints a
+       per-request CSP nonce when a request asks for a same-origin
+       HTML page; that nonce is exposed as ``request.state.csp_nonce``
+       so templates (or the SPA index handler) can stamp it onto any
+       inline ``<style>`` or ``<script>`` that absolutely has to be
+       inline. Requests without HTML don't get a nonce.
 
 2. ``require_api_key`` — thin re-export of the role-based
    ``require_role`` dependency from ``auth.py``. Kept here for
@@ -20,6 +26,7 @@ Two pieces:
 from __future__ import annotations
 
 import logging
+import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -27,10 +34,15 @@ from starlette.responses import Response
 
 log = logging.getLogger(__name__)
 
-_CSP = (
+# F-007: removed https://esm.sh. The console ships no React CDN.
+# F-016: removed 'unsafe-inline' from style-src. Per-request nonce
+# is added by ``SecurityHeadersMiddleware`` for same-origin HTML
+# responses; ``require_style_nonce`` rejects inline styles that
+# don't carry the nonce.
+_CSP_BASE = (
     "default-src 'self'; "
-    "script-src 'self' https://esm.sh; "
-    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
     "frame-ancestors 'none'; "
@@ -40,9 +52,42 @@ _CSP = (
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Apply CSP and other browser-facing headers.
+
+    For HTML responses on the same origin we also mint a fresh CSP
+    nonce per request and stash it on ``request.state.csp_nonce``.
+    Templates/stubs that render inline ``<style>`` or ``<script>``
+    blocks can stamp ``nonce={{csp_nonce}}`` on them; the nonce is
+    then added to ``script-src`` and ``style-src`` so those blocks
+    are accepted without falling back to ``'unsafe-inline'``.
+    """
+
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Always mint a nonce so handlers can opt-in. We add it to
+        # the CSP only for HTML responses so the JSON API is locked
+        # down to the base policy.
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
+
         response = await call_next(request)
-        response.headers.setdefault("Content-Security-Policy", _CSP)
+
+        csp = _CSP_BASE
+        content_type = response.headers.get("content-type", "")
+        if content_type.startswith("text/html"):
+            # HTML response: allow the per-request nonce on inline
+            # style/script tags if the template chose to use it.
+            csp = (
+                "default-src 'self'; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                f"style-src 'self' 'nonce-{nonce}'; "
+                "img-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self'"
+            )
+
+        response.headers.setdefault("Content-Security-Policy", csp)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")

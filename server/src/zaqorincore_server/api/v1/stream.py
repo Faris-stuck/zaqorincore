@@ -46,6 +46,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 import logging
 import os
 import secrets
@@ -200,13 +201,53 @@ async def ws_agent(ws: WebSocket) -> None:
             )
         )
 
+        # F-009 (v3.2.3): per-connection WS DoS guard. Cap
+        # the raw frame size and the rolling-window
+        # per-minute message rate. Both knobs live in
+        # Settings so operators can tune them without
+        # code changes. A violation drops the WS with
+        # the standard close codes (1009 / 1013).
+        ws_max_bytes = settings.ws_max_msg_bytes
+        ws_max_per_min = settings.ws_max_msg_per_min
+        window_start = time.monotonic()
+        msg_in_window = 0
+
         # Register with the dispatcher so COMMAND frames can be
         # pushed back.
         await registry.register(host.id, ws)
 
         # Now drain events until the agent sends BYE or disconnects.
         while True:
+            # F-009: per-frame size cap. We measure the
+            # text frame length BEFORE parsing it so an
+            # oversize blob never lands in JSON memory.
             raw = await ws.receive_text()
+            if len(raw) > ws_max_bytes:
+                std_log.warning(
+                    "ws frame too big from %s: %d > %d",
+                    str(agent_id), len(raw), ws_max_bytes,
+                )
+                # 1009 = message too big
+                await ws.close(code=1009)
+                return
+
+            # F-009: rolling-window per-minute message cap.
+            # Counter resets each time we cross a 60s
+            # boundary. Sustained overage drops the WS.
+            msg_in_window += 1
+            now = time.monotonic()
+            if now - window_start >= 60.0:
+                window_start = now
+                msg_in_window = 1
+            if msg_in_window > ws_max_per_min:
+                std_log.warning(
+                    "ws rate limit exceeded from %s: %d msg/min > %d",
+                    str(agent_id), msg_in_window, ws_max_per_min,
+                )
+                # 1013 = try again later
+                await ws.close(code=1013)
+                return
+
             try:
                 payload = json.loads(raw)
             except json.JSONDecodeError:
