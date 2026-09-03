@@ -1,0 +1,47 @@
+title: T1059.004 — install.sh or update.sh invoked via subprocess with piped input
+id: 8f859582-3e42-4d5a-b554-63a3c2cae3cc
+status: experimental
+description: |
+  Detects the classic curl|bash / wget|sh install pattern at
+  runtime. The agent audit layer records the cmdline of every
+  subprocess it spawns; when the cmdline matches a remote-fetch
+  piped into a shell interpreter, this rule fires.
+
+  Maps to F-015 (deferred finding) from AUDIT-2026-09-03. The
+  deferred status reflects that the safe long-term remediation is
+  signed package delivery; the rule exists so that the audit
+  trail is searchable and operators can see when an installer
+  fetch pattern ran.
+
+  False positives are expected in CI runners and dev workstations
+  that legitimately use curl|bash to bootstrap tooling. The rule
+  is medium severity precisely because of the FP surface.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.execution
+  - attack.t1059
+  - attack.command_and_scripting_interpreter
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: process.exec
+  filter_curl_pipe:
+    cmdline: 're:curl[^\n]*\|\s*(bash|sh)'
+  filter_wget_pipe:
+    cmdline: 're:wget[^\n]*\|\s*(bash|sh)'
+  condition: selection and (filter_curl_pipe or filter_wget_pipe)
+fields:
+  - src_ip
+  - agent_id
+  - cmdline
+falsepositives:
+  - Developer running install scripts during local development
+  - CI runner bootstrapping a build image
+  - Upstream vendor install instructions using the pattern
+level: medium

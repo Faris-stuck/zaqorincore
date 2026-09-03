@@ -1,4 +1,4 @@
-"""Event normalizer (ZaqorinCore v3.3.0 self-defense pack).
+"""Event normalizer (ZaqorinCore v3.4.0 self-defense pack).
 
 A thin defensive layer that turns whatever the wire layer (WS
 frames, HTTP middleware, CSP reports) gives us into a single
@@ -32,7 +32,8 @@ class ZaqorinEvent:
 
     * ``ts`` — UTC ISO-8601 timestamp.
     * ``event_type`` — one of ``ws.hello``, ``ws.dos``,
-      ``http.request``, ``audit.healthcheck``, ``csp.violation``.
+      ``http.request``, ``audit.healthcheck``, ``csp.violation``,
+      ``nft.call``, ``process.exec``.
     * ``src_ip`` — caller IP (string). Never hardcoded; the rule
       engine treats it as a placeholder.
     * ``route`` — for HTTP, the matched route template.
@@ -44,6 +45,9 @@ class ZaqorinEvent:
     * ``jsonl_persistence_enabled`` — audit healthcheck signal.
     * ``violated_directive`` — CSP report field.
     * ``trigger`` — WS DoS guard trigger name.
+    * ``target_table`` — nft table name (nft.call event).
+    * ``target_chain`` — nft chain name (nft.call event).
+    * ``cmdline`` — full process command line (process.exec event).
     """
 
     ts: str
@@ -58,6 +62,9 @@ class ZaqorinEvent:
     jsonl_persistence_enabled: bool | None = None
     violated_directive: str | None = None
     trigger: str | None = None
+    target_table: str | None = None
+    target_chain: str | None = None
+    cmdline: str | None = None
 
     def to_metadata(self) -> dict[str, Any]:
         """Project to the dict the Sigma engine consumes.
@@ -88,6 +95,12 @@ class ZaqorinEvent:
             md["violated_directive"] = self.violated_directive
         if self.trigger is not None:
             md["trigger"] = self.trigger
+        if self.target_table is not None:
+            md["target_table"] = self.target_table
+        if self.target_chain is not None:
+            md["target_chain"] = self.target_chain
+        if self.cmdline is not None:
+            md["cmdline"] = self.cmdline
         return md
 
     @staticmethod
@@ -140,6 +153,9 @@ class ZaqorinEvent:
             jsonl_persistence_enabled=_opt_bool("jsonl_persistence_enabled"),
             violated_directive=record.get("violated_directive") if isinstance(record.get("violated_directive"), str) else None,
             trigger=record.get("trigger") if isinstance(record.get("trigger"), str) else None,
+            target_table=record.get("target_table") if isinstance(record.get("target_table"), str) else None,
+            target_chain=record.get("target_chain") if isinstance(record.get("target_chain"), str) else None,
+            cmdline=record.get("cmdline") if isinstance(record.get("cmdline"), str) else None,
         )
 
     @classmethod

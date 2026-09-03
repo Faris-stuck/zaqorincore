@@ -1,0 +1,44 @@
+title: T1485.001 — nft binary add/insert called with non-whitelisted table/chain
+id: 6d12d467-99dc-4624-bf84-6faaf558008d
+status: experimental
+description: |
+  Detects attempts to invoke the nft binary with a table or chain
+  name that is not in the operator whitelist. After the v3.2.1 fix
+  the agent validates user-supplied table/chain strings against a
+  whitelist before passing them to `nft add rule` / `nft insert`.
+  This rule fires when validation REJECTS an input — meaning a
+  probe or exploit attempt is reaching the agent.
+
+  Maps to F-4 from AUDIT-2026-09-03. Operators with custom
+  table layouts must extend the whitelist inside the agent; this
+  rule is intentionally strict and will produce false positives
+  for non-standard topologies.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.defense_evasion
+  - attack.t1485
+  - attack.impact
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_bad_table:
+    target_table: 're:[/;|&$`]|\.\.'
+  filter_bad_chain:
+    target_chain: 're:[/;|&$`]|\.\.'
+  condition: selection and (filter_bad_table or filter_bad_chain)
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - target_chain
+falsepositives:
+  - Legitimate operator using custom nft tables
+  - Agent that has not been upgraded to v3.2.1 (no validation in place)
+level: high

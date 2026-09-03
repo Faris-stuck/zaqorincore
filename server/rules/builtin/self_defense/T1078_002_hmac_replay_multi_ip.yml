@@ -1,0 +1,48 @@
+title: T1078.002 — shared_secret HMAC auth from new src_ip (credential reuse)
+id: 7c89514c-945d-4b8e-b15b-7d9297356deb
+status: experimental
+description: |
+  Detects a successful HMAC-authenticated WebSocket HELLO from a
+  previously unseen src_ip using the same key_id within a short
+  window. A single shared secret authenticating from multiple
+  source IPs in 5 minutes strongly suggests credential capture +
+  replay, or a shared secret between distinct operators.
+
+  Maps to F-1 v3.2.1 (HMAC challenge-response replay fix). This
+  rule complements the brute-force detection rule T1190.002; the
+  two together cover both the success-side (stolen secret reused)
+  and failure-side (secret being guessed) of the same attack.
+
+  Threshold is intentionally loose: 2 distinct src_ip values for
+  one key_id within 300s. The runner applies a per-key_id
+  correlation window.
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1078
+  - attack.valid_accounts
+logsource:
+  product: zaqorincore
+  service: server
+detection:
+  selection:
+    event_type: ws.hello
+    auth_method: hmac
+    status: 200
+  condition: selection
+  timeframe: 300s
+  count: 2
+  by: key_id
+fields:
+  - src_ip
+  - key_id
+  - agent_id
+falsepositives:
+  - Agent migrating to a new IP within the window
+  - Multi-NIC agent with several active interfaces
+  - Operator key being shared between two distinct consoles
+level: high
