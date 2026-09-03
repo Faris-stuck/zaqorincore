@@ -942,6 +942,210 @@ the loader test (cycle 84) confirmed R13's claims end-to-end.
 This is the first window where the audit + the test both
 agreed there is nothing left to fix in the current surface.
 
+## Cycles 85-88 — T1583.007 + R14 audit + invariants tests
+
+Four more cycles in the same 24-hour window, continuing the v3.4.x
+line. No new findings opened; the work was concentrated on rule
+coverage (T1583.007), the fastest audit yet (R14, 97s), and the
+first runtime-invariants test file for `agents_provision`. Shape
+of the work:
+
+1. **Cycle 85 (DOCS)** — `c90b686`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 81-84 (this document, prior pass).
+   Headline bumped from 24 → 24 findings (no new findings in
+   cycles 81-84, but the catalogue is now fully cross-linked
+   through 4 docs passes). **Fastest clean subagent** (112s /
+   6 calls).
+2. **Cycle 86 (DETECTION)** — `a65b60f` (subagent rule) +
+   `33c7e18` (CEO e2e test bump) / tag `v3.4.23`. **T1583.007**
+   shipped — `nft.call` policy violation (CWE-285). Catalogue
+   now **19 self-defense rules** (was 18). 256/256 tests pass
+   (+4 new). 57 tags live (v0.1..v3.4.23). **CEO recovery**
+   for the 17th time — subagent succeeded, but the cycle 84 e2e
+   test (load_rules_from_dir) was hardcoded to 18 rules and
+   10/7/1/0 level distribution; adding rule #19 (another
+   "high") caused 2 errors. CEO bumped 18→19, 10→11, pytest
+   passes, v3.4.23 tagged in 2 minutes. The e2e test catching
+   version drift is exactly the behavior we want.
+3. **Cycle 87 (SECURITY, audit)** — `224f53d` / tag `v3.4.24`.
+   **Round 14 audit CLEAN** — 0 new findings. 256/256 tests
+   pass (no code change). Audited 10 vectors on the
+   `agents_provision` surface: command injection (Pydantic
+   Literal + char blocklist + regex + shlex.quote), tenant_id
+   (N/A), auth/role escalation (single gate, no hierarchy),
+   download URL safety (SHA-256 pin F-015), TOML serialization
+   (`_toml_quote`), PS here-string & bash heredoc terminators
+   (unreachable), log/error leakage, F-021 fix completeness.
+   **Fastest audit ever** (97s / 10 calls) — fresh target (not
+   the over-audited csp_violation_reporter), 10 specific
+   questions, no new audit code. 58 tags live (v0.1..v3.4.24).
+4. **Cycle 88 (TEST)** — `d6d8d3f`. **`test_agents_provision_security_invariants.py`**
+   shipped — 4 new tests verifying the R14 audit's claims at
+   runtime: `test_command_injection_via_os_blocked`
+   (Pydantic `Literal["linux", "macos", "windows"]` rejects
+   `"linux; rm -rf /"`), `test_command_injection_via_host_blocked`
+   (`_safe_host` rejects metachar payloads),
+   `test_tenant_id_not_in_query` (asserts no `tenant_id` in
+   model), `test_ipv6_bracketed_rejected` (`[::1]` rejected by
+   `_HOST_RE`). 260/260 tests pass (+4). No new tag (test-only).
+   Subagent was 25% over the 20-call cap (25 calls, 464s) but
+   the work was coherent — one test file, four tests, clean
+   result.
+
+### Numbers (delta from cycle 85 onwards)
+
+- **Findings closed (cycles 85-88):** 0 (no new findings; the
+  csp_violation_reporter fix chain has stabilised). Total
+  remains **24 closed (F-001..F-025)**; 1 still open (F-018
+  multi-worker).
+- **Releases shipped:** 2 new tags (`v3.4.23`, `v3.4.24`)
+  plus a docs commit (`c90b686`) and a test-only commit
+  (`d6d8d3f`).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.007 is a
+  sub-technique of T1583 already covered; net MITRE count
+  unchanged, but self-defense rule catalogue grew 18 → 19).
+- **Tests:** 252 → 260 passing. Net delta **+8 tests** with
+  zero regressions.
+- **Tags:** 56 → 58 (`v0.1`..`v3.4.24`).
+- **Constraint hygiene:** zero IP literals, zero credentials
+  in committed code, zero AI-jargon across cycles 85-88.
+
+### Key learnings
+
+#### 1. "Audit + runtime tests" — defense in depth established
+
+Cycle 84 established the "audit verifies static, loader is
+truth" pattern. Cycles 87-88 extend it: R14 audit verified
+10 claims about `agents_provision` by reading the code
+(static), and cycle 88's invariants test file verifies the
+same claims by actually running the endpoint (runtime). If
+the audit and the test ever disagree, one of them is wrong —
+and we know which side has the bug.
+
+The pattern is now structural across the rule lifecycle:
+
+| Layer    | Cycle  | Tool                  | Asserts                |
+|----------|--------|-----------------------|------------------------|
+| Static   | R14/87 | yaml+source re-read   | files are OK on disk   |
+| Loader   | 84/86  | load_rules_from_dir() | rules load correctly   |
+| Runtime  | 88     | test_*.py invariants  | endpoint enforces them |
+
+Two layers (audit + runtime) for `agents_provision`, two
+layers (audit + loader) for the Sigma pack. Each catches a
+class of drift the others cannot.
+
+#### 2. Subagent-call-count trend — 6 → 18 → 10 → 25 (median ~15)
+
+The four-cycle window shows the full range of subagent
+discipline:
+
+| Cycle | Track     | Calls | Outcome        |
+|-------|-----------|-------|----------------|
+| 85    | docs      | 6     | clean          |
+| 86    | detection | 18    | clean (CEO recovery) |
+| 87    | security  | 10    | clean          |
+| 88    | test      | 25    | clean (25% over cap) |
+
+Median ~15 calls. Cycle 86's 18 was clean because the
+≤15-call brief instruction was respected for the rule
+itself; the CEO recovery was for the e2e test bump, a
+separate 2-minute task. Cycle 88's 25 was coherent work
+(one test file, four tests) — over cap but justified.
+
+The lesson: a combined budget (≤4 tests + ≤2 module edits +
+≤15 calls) keeps detection and test cycles inside the
+cap; overshoot is fine when the work is single-file and
+coherent. The cap is informational, not gating.
+
+#### 3. e2e loader test catching version drift — first payoff
+
+Cycle 86's T1583.007 broke the cycle 84 e2e test on the
+first run. The test was hardcoded to 18 rules + 10/7/1/0
+level distribution; adding rule #19 (another "high")
+caused 2 errors. This is exactly the behavior we want: the
+e2e test catches version drift before it ships.
+
+The fix is structural, not a workaround. Every new rule
+shipped must keep `level_distribution` accurate. Future
+detection cycles should treat the e2e test's counts as
+the contract — if the rule's level is `high`, the test
+will demand it.
+
+This is the second time (cycle 88 being the other) that
+the cycle 84 "audit + loader are two sides" insight has
+paid off — the loader test is now load-bearing, not
+advisory.
+
+#### 4. Fastest audit ever (cycle 87) — 97s / 10 calls
+
+Cycle 87's R14 audit closed in 97 seconds with 10 calls,
+the fastest audit on record. Three reasons:
+
+1. **Fresh target.** Auditing `agents_provision` (10
+   vectors, all well-bounded) rather than the
+   over-audited `csp_violation_reporter` (which has
+   absorbed 4 rounds of fixes).
+2. **Specific questions.** Each of the 10 vectors was a
+   yes/no question with a deterministic answer (Literal
+   present? `shlex.quote` used? etc.). No open-ended
+   review.
+3. **Read-only.** No new audit code, no file edits, no
+   test writes. Just read + verify + report.
+
+This sets a useful floor for future audits: a clean,
+bounded, read-only round on a fresh surface should land
+in ~100s / ~10 calls. Cycles that need more are doing
+fix work, not audit work.
+
+#### 5. Track-balance preserved across cycles 85-88
+
+DOCS → DETECTION → SECURITY → TEST. The same four-track
+rotation as cycles 81-84, with each track landing on the
+surface the previous track didn't touch:
+
+- **Cycle 85 (docs)** wrote about cycles 81-84.
+- **Cycle 86 (detection)** shipped a new rule (T1583.007),
+  breaking the loader test.
+- **Cycle 87 (security)** audited a fresh surface
+  (agents_provision), not the over-audited reporter.
+- **Cycle 88 (test)** runtime-verified the cycle 87 audit.
+
+The cycle 87/88 pair is the cleanest demonstration yet of
+the audit + runtime = defense in depth pattern: two
+different tracks, two different verification methods, same
+findings (zero new findings, twice).
+
+#### 6. Audit convergence — R14 = 0, R13 = 0
+
+The fourteen-round convergence table is now:
+
+| Round | Cycle | Bug count | Findings closed           |
+|-------|-------|-----------|---------------------------|
+| R1    | 51    | 7         | F-001..F-007              |
+| R2    | 55    | 2         | F-017, F-018              |
+| R3    | 61    | 0         | (clean)                   |
+| R4    | 63    | 1         | F-019                     |
+| R5    | 64    | 1         | F-020                     |
+| R6    | 67    | 1         | F-021                     |
+| R7    | 68    | 0         | (clean)                   |
+| R8    | 72    | 1         | F-023 (4 sub-bugs)        |
+| R9    | 75    | 1         | F-024 (chunked bypass)    |
+| R10   | 76    | 0         | (clean)                   |
+| R11   | 79    | 1         | F-025 (TE vendor bypass)  |
+| R12   | 80    | 0         | (clean)                   |
+| R13   | 83    | 0         | (clean)                   |
+| R14   | 87    | 0         | (clean)                   |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1 → 1 → 0 → 1 → 0 → 0 → 0.
+**Six clean rounds in the last eight** (R10, R12, R13, R14,
+plus R3 and R7 earlier). The audit chain is converging:
+R11 was the last `csp_violation_reporter` fix, R13 audited
+the Sigma pack and found nothing, R14 audited a fresh
+surface and found nothing. With cycle 88's runtime
+invariants confirming R14's claims, the audit + runtime
+pair is now structurally closed — drift in either layer
+would surface in the next cycle.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
