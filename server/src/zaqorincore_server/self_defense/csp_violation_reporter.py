@@ -166,19 +166,28 @@ async def receive_csp_report(
     ``ZaqorinEvent`` and pushed into the in-process stream so the
     Sigma engine can correlate it against T1505.003 / T1505.004.
     """
-    # F-023: cap body size. Browsers always send a small fixed body
-    # for CSP reports (≤8 KiB), so legitimate clients can never
-    # legitimately use chunked transfer encoding here.
+    # F-024 + F-025: cap body size. Browsers always send a small
+    # fixed body for CSP reports (≤8 KiB), so legitimate clients
+    # can never legitimately use chunked transfer encoding here.
     #
-    # F-024: reject Transfer-Encoding: chunked outright, since
-    # chunked bodies bypass the Content-Length-only cap. Browsers
+    # F-024 (cycle 75): reject Transfer-Encoding: chunked. Browsers
     # do not chunk CSP reports; non-browser clients (curl, Go
     # http.Client) usually set Content-Length. The chunked header
     # is therefore a strong signal of either a misconfigured client
     # or an attacker trying to stream an unbounded body.
-    te = request.headers.get("transfer-encoding", "").lower()
-    if "chunked" in te:
-        return FastAPIRawResponse(status_code=411, content=b"")
+    #
+    # F-025 (cycle 79): also reject the legacy `TE: chunked` header
+    # (RFC 2068/7230 singular form, used by some HTTP/1.0 clients
+    # and reverse proxies) AND the vendor prefix `X-Transfer-Encoding`
+    # which h11 does not normalize to the canonical form.
+    te_candidates = (
+        request.headers.get("transfer-encoding", ""),
+        request.headers.get("te", ""),
+        request.headers.get("x-transfer-encoding", ""),
+    )
+    for te in te_candidates:
+        if "chunked" in te.lower():
+            return FastAPIRawResponse(status_code=411, content=b"")
     cl = request.headers.get("content-length")
     if cl is not None:
         try:

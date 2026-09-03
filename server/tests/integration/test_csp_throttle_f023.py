@@ -205,6 +205,55 @@ def test_chunked_transfer_rejected(client):
     assert r.status_code == 411, f"expected 411, got {r.status_code}"
 
 
+def test_legacy_te_header_rejected(client):
+    """F-025: legacy `TE: chunked` (RFC 2068 singular form) is 411.
+
+    Some HTTP/1.0 clients and reverse proxies use `TE` instead
+    of `Transfer-Encoding`. h11 does not normalize them.
+    """
+    os.environ["ZAQORIN_SRC_IP_HEADER"] = "X-Forwarded-For"
+    body = {
+        "csp-report": {
+            "document-uri": "https://app.example.test/",
+            "violated-directive": "script-src",
+        }
+    }
+    r = client.post(
+        "/api/v1/_csp-report",
+        json=body,
+        headers={
+            "x-forwarded-for": "10.0.0.8",
+            "te": "chunked",
+        },
+    )
+    assert r.status_code == 411, f"expected 411, got {r.status_code}"
+
+
+def test_x_transfer_encoding_rejected(client):
+    """F-025: vendor prefix `X-Transfer-Encoding: chunked` is 411.
+
+    Some reverse proxies and load balancers inject the
+    X-Transfer-Encoding header instead of the canonical
+    Transfer-Encoding. Must be treated identically.
+    """
+    os.environ["ZAQORIN_SRC_IP_HEADER"] = "X-Forwarded-For"
+    body = {
+        "csp-report": {
+            "document-uri": "https://app.example.test/",
+            "violated-directive": "script-src",
+        }
+    }
+    r = client.post(
+        "/api/v1/_csp-report",
+        json=body,
+        headers={
+            "x-forwarded-for": "10.0.0.9",
+            "x-transfer-encoding": "chunked",
+        },
+    )
+    assert r.status_code == 411, f"expected 411, got {r.status_code}"
+
+
 def test_throttled_does_not_emit_event(client):
     """F-023 #4: throttled requests must NOT call emit().
 
