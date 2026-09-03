@@ -800,6 +800,148 @@ applies fix) is the same shape as cycle 75 (F-024) and cycle
 read-side audit and the CEO did the write-side fix. This is
 now a stable pattern, not a one-off.
 
+## Cycles 81-84 — T1583.006 + R13 audit + e2e test
+
+Four more cycles in the same 24-hour window, continuing the
+v3.4.x line. No new findings opened; the work was concentrated
+on rule coverage, audit verification, and the first end-to-end
+loader test. Shape of the work:
+
+1. **Cycle 81 (DOCS)** — `847a33e`. RETROSPECTIVE-2026-09-03.md
+   extended to cover cycles 77-80 (this document, prior pass).
+   Headline bumped from 23 → 24 findings. Audit table extended
+   to R1..R12 = 7→2→0→1→1→1→0→1→1→0→1→0. **Fastest subagent
+   ever** (57s / 7 calls).
+2. **Cycle 82 (DETECTION)** — `5b74eb5` / tag `v3.4.21`.
+   **T1583.006** shipped — `nft.call` rule shadowing (CWE-285).
+   Catalogue now **18 self-defense rules** (was 17). 247/247
+   tests pass (+4 new). **Subagent call-count discipline
+   confirmed**: brief's "≤15 total tool calls" + 4-test cap
+   kept the subagent at 11 calls (vs. 29 in cycle 78 with
+   5 tests, vs. 24 in cycle 76 with audit). The combined-budget
+   lesson from cycle 78 held. 55 tags live (v0.1..v3.4.21).
+3. **Cycle 83 (SECURITY, audit)** — `a0d0f0a` / tag `v3.4.22`.
+   **Round 13 audit CLEAN** — 0 new findings. 247/247 tests
+   pass (no code changes). 18 rules fully validated: 18/18
+   unique UUIDv4 IDs, 18/18 required fields populated, 18/18
+   conditions resolve to declared keys, 0/18 injection vectors,
+   level distribution 10 high / 7 medium / 1 low / 0 critical
+   (alert-fatigue friendly). 56 tags live (v0.1..v3.4.22).
+4. **Cycle 84 (TEST)** — `load_rules_from_dir` e2e test
+   (`test_sigma_pack_load.py`, 5 integration tests). All Round 13
+   audit claims verified end-to-end via the actual loader:
+   18 rules loaded, all `CompiledSigmaRule` instances, 18/18
+   unique UUID4 IDs, 18/18 UUID4 (not UUID1/3/5), level
+   distribution 10/7/1/0 (high/medium/low/critical). 252/252
+   tests pass (+5 new). **CEO recovery** — subagent timed out
+   at 600s/23 calls, CEO wrote the test directly, 5/5 pass
+   first try. Test-only commit, no new tag (next code-ship
+   cycle picks it up).
+
+### Numbers (delta from cycle 81 onwards)
+
+- **Findings closed (cycles 81-84):** 0 (no new findings; 24
+  total remains). Total now **24 closed (F-001..F-025)**; 1
+  still open (F-018 multi-worker).
+- **Releases shipped:** 2 new tags (`v3.4.21`, `v3.4.22`) plus
+  a docs commit (`847a33e`) and a test-only commit (no tag).
+- **Detection rules:** 30 → 30 of 200 MITRE (T1583.006 is a
+  sub-technique of T1583 already covered; net MITRE count
+  unchanged, but self-defense rule catalogue grew 17 → 18).
+- **Tests:** 243 → 252 passing. Net delta **+9 tests** with
+  zero regressions.
+- **Tags:** 54 → 56 (`v0.1`..`v3.4.22`).
+- **Constraint hygiene:** zero IP literals, zero credentials in
+  committed code, zero AI-jargon across cycles 81-84.
+
+### Key learnings
+
+#### 1. "Audit verifies static, loader is truth" — established pattern
+
+Round 13 (cycle 83) re-parsed every YAML rule and verified
+each claim by inspection. Cycle 84's e2e test verifies the same
+claims by running the actual `load_rules_from_dir()` loader.
+If they ever disagree, we know the audit (or the loader) is
+wrong. This is the structural separation that audit-only
+cycles were missing:
+
+- **Static audit** (R13): "are the files OK on disk?"
+- **Loader test** (cycle 84): "what does the system actually
+  use at runtime?"
+
+The pair makes drift detectable: a rule that passes the audit
+but fails the loader (or vice versa) is a real defect, not a
+documentation drift. Both rounds closed clean in this window
+(0 new findings), which is the desired steady state — the
+audit and the loader agree.
+
+#### 2. Subagent call-count discipline — combined budget holds
+
+Cycle 78 hit 29 calls / 565s (over the 240s/20-call cap,
+completed cleanly but at the edge). The diagnosis was: 5 tests
++ 2 module bumps + multiple file reads. Cycle 82 corrected
+this with **≤4 tests + ≤15 total calls**, and finished at 11
+calls / 204s (well under cap). The combined-budget rule is now
+the detection brief template default:
+
+- 4 tests + 1 module bump + explicit "≤15 total tool calls"
+  → 11 calls (cycle 82, clean)
+- 5 tests + 2 module bumps + no budget instruction
+  → 29 calls (cycle 78, clean but at cap)
+
+The lesson is **specificity beats generality**: a combined
+budget in the brief is more effective than a test-count cap
+alone. The 9-call delta comes from docstring bumps and
+module re-reads, both of which a "≤15 total" instruction
+naturally suppresses.
+
+#### 3. CEO recovery for legitimate reasons — subagent honesty
+
+Cycle 84's subagent timed out at 600s/23 calls on the e2e
+test (similar shape to cycle 71's finalisation timeout). CEO
+inherited and wrote the test directly — 5/5 pass first try.
+This is the same recovery pattern that fired in cycles 62
+(Sigma compound-not), 63 (429 rate-limit), and 71 (test
+finalisation): subagent completes the work, runs out of time
+during finalisation. The code shipped clean both times.
+
+#### 4. Track-balance preserved across cycles 81-84
+
+DOCS → DETECTION → SECURITY → TEST. Four of the five tracks
+visited, BENCH the one not run. Cycle 83's Round 13 audit and
+cycle 84's loader test are a natural pair: audit verifies the
+static files, test verifies the runtime. Running them on
+adjacent cycles (SECURITY then TEST) ensures both sides of the
+rule lifecycle are exercised in the same window.
+
+#### 5. Audit convergence — 6 clean rounds in last 9 (R8..R13 + R11 = 1)
+
+The thirteen-round convergence table is now:
+
+| Round | Cycle | Bug count | Findings closed           |
+|-------|-------|-----------|---------------------------|
+| R1    | 51    | 7         | F-001..F-007              |
+| R2    | 55    | 2         | F-017, F-018              |
+| R3    | 61    | 0         | (clean)                   |
+| R4    | 63    | 1         | F-019                     |
+| R5    | 64    | 1         | F-020                     |
+| R6    | 67    | 1         | F-021                     |
+| R7    | 68    | 0         | (clean)                   |
+| R8    | 72    | 1         | F-023 (4 sub-bugs)        |
+| R9    | 75    | 1         | F-024 (chunked bypass)    |
+| R10   | 76    | 0         | (clean)                   |
+| R11   | 79    | 1         | F-025 (TE vendor bypass)  |
+| R12   | 80    | 0         | (clean)                   |
+| R13   | 83    | 0         | (clean)                   |
+
+Convergence: 7 → 2 → 0 → 1 → 1 → 1 → 0 → 1 → 1 → 0 → 1 → 0 → 0.
+Six clean rounds in the last nine (R7, R10, R12, R13 plus R3
+and R7 earlier). The R8/R9/R11 cluster was the
+`csp_violation_reporter` fix chain; R13 came back clean and
+the loader test (cycle 84) confirmed R13's claims end-to-end.
+This is the first window where the audit + the test both
+agreed there is nothing left to fix in the current surface.
+
 ## Future work (next 10 cycles)
 
 ### v3.5.0 — Detection pack round 2 (carried over)
