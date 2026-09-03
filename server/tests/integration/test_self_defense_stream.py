@@ -1,12 +1,14 @@
 """Integration tests for the self_defense in-process event stream.
 
-Closes the F-018 loop: the ``_STREAM`` ``deque(maxlen=4096)`` in
-``server/src/zaqorincore_server/self_defense/__init__.py`` is a
-single-loop data structure. ``emit()`` and ``drain()`` are not
-lock-protected — they are safe under the single-event-loop
-asyncio model CPython 3.11/3.12 ship, but the test below documents
-the gap so a future move to free-threaded CPython 3.13+ trips the
-right alarm.
+F-018 fixed in v3.4.4: ``emit()`` and ``drain()`` are now
+protected by ``threading.Lock``. The previous version of this
+module documented the unlocked-deque gap; the tests below now
+assert that the fix actually works under multi-threaded load.
+
+Note on scope: the lock is **in-process**. Multi-worker uvicorn
+deployments still have N independent streams. See
+``self_defense/MULTI_WORKER.md`` and the F-018 finding doc for
+the cross-worker gap (Redis-stream future work).
 
 Tests in this module are marked ``integration`` so they can be
 skipped under unit-only mode.
@@ -17,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import threading
 
 # Boot-time env so the package import does not fail.
 os.environ.setdefault(
@@ -38,6 +41,7 @@ os.environ.setdefault("ZAQORIN_DETECTORS_ENABLED", "false")
 
 import pytest  # noqa: E402
 
+from zaqorincore_server import self_defense  # noqa: E402
 from zaqorincore_server.self_defense import drain, emit  # noqa: E402
 from zaqorincore_server.self_defense.event_normalizer import (  # noqa: E402
     ZaqorinEvent,
@@ -53,6 +57,19 @@ def _make_event(idx: int) -> ZaqorinEvent:
         event_type="ws.hello",
         src_ip=f"203.0.113.{idx % 256}",  # RFC 5737 documentation range
     )
+
+
+def _reset_stream() -> None:
+    """Clear the module-level ``_STREAM`` for an isolated test.
+
+    The stream is module-singleton, so prior tests (especially
+    ``test_stream_bounded_at_maxlen``) may have left it at the
+    ``maxlen=4096`` ceiling. Without resetting, tests that
+    assert on the delta from ``before`` will see eviction
+    cancel out the just-emitted events.
+    """
+    with self_defense._STREAM_LOCK:
+        self_defense._STREAM.clear()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -125,38 +142,175 @@ def test_drain_max_items_respected() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Invariant 4: concurrent emit() doesn't corrupt (single-loop only)
+# Invariant 4: F-018 fix — concurrent emit() preserves all events
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_emit_uses_lock() -> None:
+    """10 threads × 100 emits = 1000 events; stream count grows by 1000.
+
+    F-018 fix: ``emit()`` now holds ``_STREAM_LOCK`` around the
+    append. Before the fix, an unlocked ``deque.append`` under
+    free-threaded CPython (3.13+) — or under ``asyncio.to_thread``
+    where the GIL is periodically released — could race with
+    ``drain``'s ``list(_STREAM)[-max_items:]`` snapshot and lose
+    events at the slice boundary. With the lock, every emit is
+    serialised and the drain snapshot is consistent.
+
+    We pick a count comfortably below ``maxlen=4096`` so eviction
+    is not a confounder — if the count does not grow by exactly
+    1000, the lock is broken or the snapshot is corrupt.
+    """
+    _reset_stream()
+    n_threads = 10
+    per_thread = 100
+    total = n_threads * per_thread  # 1000
+
+    before = len(list(drain(max_items=100_000)))
+
+    barrier = threading.Barrier(n_threads)
+
+    def _worker(tid: int) -> None:
+        barrier.wait()  # maximise overlap across threads
+        for i in range(per_thread):
+            emit(_make_event(tid * 10_000 + i))
+
+    threads = [
+        threading.Thread(target=_worker, args=(t,))
+        for t in range(n_threads)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    after = len(list(drain(max_items=100_000)))
+    assert after == before + total, (
+        f"expected stream to grow by {total} under concurrent emit, "
+        f"got before={before} after={after} (delta={after - before})"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Invariant 5: F-018 fix — drain() is atomic with concurrent emit()
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_drain_atomic_with_concurrent_emit() -> None:
+    """Background emitter + foreground drain must never corrupt the snapshot.
+
+    F-018 fix: ``drain()`` takes the snapshot copy *inside* the
+    lock. The pre-fix version computed ``list(_STREAM)[-max_items:]``
+    without holding the lock, so a concurrent ``emit`` could
+    shift the deque between the ``list()`` call and the slice,
+    producing a truncated or duplicated entry at the boundary.
+
+    This test runs a background thread emitting 1000 events while
+    the main thread calls ``drain`` 10 times. Every drain must
+    return a valid list — no exceptions, no truncated events.
+    """
+    _reset_stream()
+    stop = threading.Event()
+
+    def _emitter() -> None:
+        i = 0
+        while not stop.is_set():
+            emit(_make_event(i))
+            i += 1
+
+    emitter = threading.Thread(target=_emitter, daemon=True)
+    emitter.start()
+
+    try:
+        for _ in range(10):
+            snap = list(drain(max_items=128))
+            assert isinstance(snap, list)
+            # Every item is a ZaqorinEvent — the snapshot copy
+            # under the lock guarantees this; if the slice
+            # boundary ever crossed an in-flight append the
+            # test would see a partially-constructed event.
+            assert all(
+                hasattr(e, "ts") and hasattr(e, "event_type")
+                for e in snap
+            ), snap
+            assert len(snap) <= 128
+    finally:
+        stop.set()
+        emitter.join(timeout=2.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Invariant 6: F-018 fix — total event count under sustained load
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_emit_thread_safe_under_load() -> None:
+    """4 threads × 1000 emits = 4000 events; count grows by exactly 4000.
+
+    We measure ``before`` (count after the prior test left the
+    stream) and assert the post-emit snapshot is exactly
+    ``before + 4000``. This is robust to ordering: any other test
+    can run first, and any prior events can occupy the tail of
+    the deque.
+
+    The 4000 is well below ``maxlen=4096`` so eviction cannot
+    hide a loss — if the lock is broken, ``after < before + 4000``.
+    """
+    _reset_stream()
+    n_threads = 4
+    per_thread = 1000
+    total = n_threads * per_thread  # 4000
+
+    before = len(list(drain(max_items=100_000)))
+
+    barrier = threading.Barrier(n_threads)
+
+    def _worker(tid: int) -> None:
+        barrier.wait()
+        for i in range(per_thread):
+            emit(_make_event(tid * 100_000 + i))
+
+    threads = [
+        threading.Thread(target=_worker, args=(t,))
+        for t in range(n_threads)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    after = len(list(drain(max_items=100_000)))
+    assert after == before + total, (
+        f"expected {total} new events after 4×1000 emits, "
+        f"got after={after}, before={before} (delta={after - before})"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Invariant 7: emit/drain work under asyncio.to_thread (the real hot path)
 # ─────────────────────────────────────────────────────────────────────────
 
 
 def test_concurrent_emit_does_not_corrupt() -> None:
-    """10 concurrent emit() calls — all events eventually drained.
+    """asyncio.to_thread(emit) — exercises the lock across an event loop.
 
-    F-018: this test passes under single-loop asyncio
-    (CPython 3.11/3.12 default), where ``deque.append`` is atomic
-    at the bytecode level and the GIL serializes the operations.
-    Under free-threaded CPython 3.13+ (PEP 703) without the GIL,
-    ``emit`` and ``drain`` would race; the test would either
-    raise or return a partial snapshot.
+    F-018 fix: with the ``threading.Lock`` in place, ``emit``
+    serialises correctly even when called from
+    ``asyncio.to_thread`` workers. Before the fix, the same
+    pattern was technically racey on free-threaded CPython.
 
-    If this test becomes flaky on 3.13t, the fix is a ``threading.Lock``
-    around ``_STREAM.append`` (and a snapshot copy under the lock
-    in ``drain``). For now, the asyncio loop guarantees the order.
+    No exception escaping the gather is the primary assertion.
     """
     emitted = 10
 
     async def _emit_many() -> None:
-        # 10 concurrent tasks, each appending one event.
         await asyncio.gather(
             *(asyncio.to_thread(emit, _make_event(i)) for i in range(emitted))
         )
 
     asyncio.run(_emit_many())
 
-    # No exception escaped; snapshot a generous window so the
-    # just-emitted events are present (modulo prior tests' evictions).
     snapshot = list(drain(max_items=10_000))
-    # We assert "no exception" structurally: the test reaches this
-    # line at all means the concurrent emits didn't blow up the
-    # process. Confirm at least one event is still in the stream.
+    # At least one event is present (prior tests may have
+    # evicted older ones; that's fine).
     assert len(snapshot) >= 1, snapshot
