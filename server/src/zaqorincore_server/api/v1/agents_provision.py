@@ -710,7 +710,32 @@ async def post_provision_install_command(
 
     digest = artifact_sha256
 
-    if not host.startswith(("zaqorin-", "10.", "192.168.", "172.")):
+    # F-021: do NOT use string-prefix matching on RFC1918 octets
+    # ("10.", "192.168.", "172.") — a public DNS name like
+    # "10x.example.com" or "1720-sensor.example.com" would match
+    # and skip the redaction branch, re-leaking the hostname in
+    # the response. Use ipaddress.ip_address() to actually parse
+    # the input as an IP, and ip.is_private / ip.is_loopback /
+    # ip.is_link_local to classify. DNS names never parse as
+    # IPs, so the ValueError branch handles the "host is a DNS
+    # name" case (which is the case we want to redact).
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address(host)
+        is_internal = (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_unspecified
+        )
+    except ValueError:
+        # host is a DNS name, not an IP — always treat as public
+        is_internal = False
+
+    if not is_internal:
         # F-019: redact the literal hostname from the response
         # (CWE-200). The operator still sees the full value in
         # the request log; the response carries only a

@@ -237,6 +237,74 @@ def test_install_command_warnings_redact_public_dns(
         ), f"expected a 12-char hex fingerprint, got: {w!r}"
 
 
+def test_install_command_warnings_redact_rfc1918_prefix_dns_bypass(
+    client_no_auth: TestClient,
+) -> None:
+    """F-021: public DNS names that *start with* an RFC1918 octet
+    prefix must still be redacted.
+
+    A host like ``10x.example.com`` or ``1720-sensor.example.com``
+    is a public DNS name, not an RFC1918 IP, but a naive
+    ``host.startswith("10.")`` check would let it through and
+    leak the literal hostname. The fix uses
+    ``ipaddress.ip_address()`` to actually parse the value as an
+    IP, which raises ``ValueError`` for DNS names, sending them
+    to the redact branch.
+    """
+    bypass_hosts = [
+        "10x.example.test",       # starts with "10."
+        "1720-sensor.example.test",  # starts with "172."
+        "192168-host.example.test",  # looks like RFC1918 prefix
+    ]
+    for public_host in bypass_hosts:
+        payload = {"agent_id": "agent-test-f021", "host": public_host}
+        r = client_no_auth.post(
+            "/api/v1/agents/provision/install-command", json=payload
+        )
+        assert r.status_code == status.HTTP_200_OK
+        body = r.json()
+        pub_dns_warnings = [
+            w for w in body["warnings"] if "public DNS" in w
+        ]
+        assert pub_dns_warnings, (
+            f"{public_host!r}: expected at least one public-DNS "
+            f"warning, got: {body['warnings']}"
+        )
+        for w in pub_dns_warnings:
+            assert public_host not in w, (
+                f"{public_host!r}: hostname leaked in warning: {w!r}"
+            )
+            assert "redacted" in w, (
+                f"{public_host!r}: warning should be marked redacted: {w!r}"
+            )
+
+
+def test_install_command_warnings_skip_rfc1918_ip(
+    client_no_auth: TestClient,
+) -> None:
+    """F-021 follow-up: a literal RFC1918 IP must NOT trigger the
+    redaction warning (the operator is in their own network)."""
+    rfc1918_hosts = [
+        "10.0.0.5",
+        "192.168.1.10",
+        "172.16.0.42",
+    ]
+    for internal_host in rfc1918_hosts:
+        payload = {"agent_id": "agent-test-internal", "host": internal_host}
+        r = client_no_auth.post(
+            "/api/v1/agents/provision/install-command", json=payload
+        )
+        assert r.status_code == status.HTTP_200_OK
+        body = r.json()
+        pub_dns_warnings = [
+            w for w in body["warnings"] if "public DNS" in w
+        ]
+        assert not pub_dns_warnings, (
+            f"{internal_host!r}: RFC1918 IP should NOT trigger "
+            f"public-DNS warning, got: {pub_dns_warnings}"
+        )
+
+
 def test_install_command_default_os(client_no_auth: TestClient) -> None:
     """Omitting ``os`` from the body defaults to ``linux``.
 
