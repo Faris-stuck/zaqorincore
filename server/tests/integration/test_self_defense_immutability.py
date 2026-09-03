@@ -53,10 +53,10 @@ def test_self_defense_rules_not_mutable() -> None:
         SELF_DEFENSE_RULES.append(object())  # type: ignore[attr-defined]
 
 
-def test_self_defense_rules_count_is_21() -> None:
-    """The cache must contain exactly 21 compiled rules (cycle 94)."""
-    assert len(SELF_DEFENSE_RULES) == 21, (
-        f"expected 21 rules, got {len(SELF_DEFENSE_RULES)}"
+def test_self_defense_rules_count_is_22() -> None:
+    """The cache must contain exactly 22 compiled rules (cycle 98)."""
+    assert len(SELF_DEFENSE_RULES) == 22, (
+        f"expected 22 rules, got {len(SELF_DEFENSE_RULES)}"
     )
     # RULE_TITLES must mirror the rule count.
     assert len(RULE_TITLES) == len(SELF_DEFENSE_RULES)

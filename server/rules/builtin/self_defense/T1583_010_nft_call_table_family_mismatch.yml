@@ -1,0 +1,44 @@
+title: T1583.010 — nft.call table family mismatch (CWE-1188)
+id: c3e6e1b4-a2a0-41cb-bbf0-695d79dec0b4
+status: experimental
+description: |
+  Detects an nftables call that adds or removes a rule in a table family the
+  operator never registered (e.g. an attacker adding rules to the `netdev`
+  family while the operator only controls the `inet` family). Indicates
+  rule-set manipulation outside the operator's expected scope.
+
+  The engine pre-computes `table_family_mismatch: true` on the event when
+  the referenced table family is not present in the operator's declared
+  family list, so this rule stays a single-event Sigma rule (matches
+  ADR-010 condition patterns).
+
+  Maps to F-5 from AUDIT-2026-09-03 (Acquired Infrastructure — operator
+  rule-set divergence).
+references:
+  - https://github.com/Faris-stuck/zaqorincore/security/advisories
+author: ZaqorinCore
+date: 2026/09/04
+modified: 2026/09/04
+tags:
+  - attack.initial_access
+  - attack.t1583
+  - attack.resource_development
+  - cwe.1188
+logsource:
+  product: zaqorincore
+  service: agent
+detection:
+  selection:
+    event_type: nft.call
+  filter_table_family_mismatch:
+    table_family_mismatch: false
+  condition: selection and not filter_table_family_mismatch
+fields:
+  - src_ip
+  - agent_id
+  - target_table
+  - table_family
+  - expected_table_families
+falsepositives:
+  - Operator multi-family deployment
+level: high
