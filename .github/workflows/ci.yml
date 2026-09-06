@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel in-progress runs for the same branch.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -18,66 +17,47 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.22", "1.23"]
+        go: ["1.25", "1.27"]
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go ${{ matrix.go }}
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
           cache: true
-
       - name: Verify modules
         working-directory: agent
         run: go mod verify
-
       - name: go vet
         working-directory: agent
         run: go vet ./...
-
       - name: go test -race
         working-directory: agent
-        # -short skips tests gated by build tag "integration"
-        # which require CAP_SYS_ADMIN / live eBPF.
         run: go test -race -count=1 -short -timeout=180s ./...
-
       - name: go test -race -cover (no kernel)
         working-directory: agent
-        # Cover all unit-testable packages; report
-        # coverage profile as artifact.
         run: |
           go test -race -count=1 -short -timeout=180s \
             -coverprofile=coverage.out -covermode=atomic \
             ./pkg/... ./internal/...
           go tool cover -func=coverage.out | tail -1
-
       - name: Upload coverage artifact
-        if: matrix.go == '1.22'
+        if: matrix.go == '1.25'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-unit
           path: agent/coverage.out
 
   lint_sigma_rules:
-    # Cheap compile gate for every Sigma rule YAML in
-    # server/rules/. Defence-in-depth on top of cycle 27's
-    # pre-commit lint script: any push or PR that breaks a
-    # rule file fails here before the server ever starts.
     name: lint_sigma_rules (compile gate)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Lint Sigma rule YAMLs
-        # The script self-bootstraps PYTHONPATH against
-        # server/src and exits non-zero on the first file
-        # that fails to parse. No third-party tools.
         run: bash server/scripts/lint_sigma_rules.sh
 
   bench:
@@ -89,19 +69,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - name: Run DFA state-transition bench
         working-directory: agent
-        # benchtime=1s is enough to detect 10x
-        # regressions. We assert the alloc count
-        # in a follow-up step.
         run: |
           go test -bench=BenchmarkDFAStateTransition \
             -benchmem -benchtime=1s -run=^$ \
             ./pkg/engine/ | tee bench.txt
-          # Assert: 0 allocs/op. Any non-zero fails
-          # the NFR gate.
           if grep -qE '[1-9][0-9]* allocs/op' bench.txt; then
             echo "::error::NFR regression: DFA hot path allocates"
             exit 1
@@ -116,7 +91,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - name: Build static binary
         working-directory: agent
@@ -138,53 +113,40 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
-
       - name: Build agent
         working-directory: agent
         run: make build
-
       - name: Install websocat
         run: |
           curl -fsSL https://github.com/vi/websocat/releases/download/v1.13.0/websocat.x86_64-unknown-linux-musl \
             -o /tmp/websocat
           chmod +x /tmp/websocat
           /tmp/websocat --version
-
       - name: Run smoke
         working-directory: agent
         env:
           WEBSOCAT_BIN: /tmp/websocat
-        # scripts/smoke.sh uses trap to ensure the
-        # websocat server is killed on exit, so the
-        # job cannot hang.
         run: bash scripts/smoke.sh
 
   integration:
     name: integration (requires CAP_SYS_ADMIN)
     runs-on: ubuntu-latest
     needs: unit
-    # Integration tests need a recent kernel and
-    # CAP_SYS_ADMIN. They are NOT a merge gate;
-    # they only run on main pushes (not on PRs).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - name: Run integration tests
         working-directory: agent
-        # Build tag "integration" gates the live
-        # eBPF tests so they only run when this job
-        # explicitly opts in.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq linux-tools-common linux-tools-generic
