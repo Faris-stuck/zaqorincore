@@ -1,9 +1,4 @@
-"""Application configuration.
-
-Settings are loaded from environment variables (and optionally a .env
-file) using pydantic-settings. All vars are prefixed with ZAQORIN_
-to avoid collision with the agent's vars on the same host.
-"""
+"""Application configuration loaded from ZAQORIN_* environment variables."""
 
 from __future__ import annotations
 
@@ -14,8 +9,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Server settings. Read once at process start."""
-
     model_config = SettingsConfigDict(
         env_prefix="ZAQORIN_",
         env_file=".env",
@@ -23,131 +16,43 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- HTTP server ---
     server_host: str = "0.0.0.0"
     server_port: int = 8000
-
-    # --- Logging ---
     log_level: Literal["debug", "info", "warn", "error"] = "info"
-
-    # --- Database ---
-    # Change zaqorin:*** before any non-dev deploy.
-    database_url: str = (
-        "postgresql+asyncpg://zaqorin:***@127.0.0.1:25432/zaqorin"
-    )
+    database_url: str = "postgresql+asyncpg://zaqorin:***@127.0.0.1:25432/zaqorin"
     db_pool_size: int = 5
     db_max_overflow: int = 5
-    db_echo: bool = False  # set true for SQL debug
-
-    # --- Redis ---
+    db_echo: bool = False
     redis_url: str = "redis://127.0.0.1:6379/0"
-
-    # --- Streams ---
     stream_name: str = "zaqorin:events"
     stream_maxlen: int = 10_000
     stream_group: str = "zaqorin-detectors"
-
-    # --- Detectors ---
-    # When False, the server skips starting the detector runner
-    # task in its lifespan. Tests that don't want a background
-    # event loop set this to False.
     detectors_enabled: bool = True
-    # Per-detector tunables. Phase 5 may move these to DB-backed
-    # `detector_configs` for live tuning; for now they're
-    # static env vars.
     ssh_bruteforce_threshold: int = Field(default=5, ge=1, le=10_000)
     ssh_bruteforce_window_sec: int = Field(default=60, ge=1, le=86_400)
     ssh_bruteforce_cooldown_sec: int = Field(default=300, ge=1, le=86_400)
-
-    # --- Limits / sanity ---
-    # Reject a single WS frame larger than this. 64 KiB is generous for
-    # one event and stops a misbehaving agent from eating memory.
     max_frame_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
-
-    # --- Test-only switches ---
-    # When False, the server skips Redis (no streams, no consumer group).
-    # Used by integration tests that don't want a Redis dependency.
     streams_enabled: bool = True
-
-    # --- Dispatcher (Phase 4) ---
-    # When False, the dispatcher is not started; actions stay pending.
     dispatcher_enabled: bool = True
-    # Poll interval for the action queue. Cheap to be aggressive;
-    # the table has an index on (status, created_at) so the
-    # query stays O(pending) regardless of total actions.
     dispatcher_poll_sec: float = Field(default=5.0, ge=0.1, le=60.0)
-
-    # --- Deployment mode (Phase 5, ADR-002) ---
-    # Selects the tiered config profile: individual | startup | enterprise.
-    # Default is "startup" — the most common deployment. Individual is
-    # for homelab users; enterprise is for multi-node clusters.
     deployment_mode: str = "startup"
-
-    # --- Sigma rule engine (Phase 6, ADR-004) ---
-    # Directory where Sigma-compatible rule YAML files are loaded
-    # at runner startup. Operators can drop new rules in here and
-    # they take effect on next server start. Builtin rules ship
-    # under `rules/builtin/` next to the package.
     rules_dir: str = "rules/builtin"
-
-    # --- SOAR worker (v1.3.0, ADR-008) ---
-    # When False, the SOAR worker is not started. Tests that
-    # don't want a background event loop set this to False.
     soar_enabled: bool = True
-    # Path to the TOML config. Resolved by the SOAR package.
     soar_config: str = "config/soar.toml"
 
-    # --- API auth (v1.3.0 IMP-1) ---
-    # Shared secret for the X-API-Key header. When unset (the
-    # default for dev), the SOAR endpoints are open and log
-    # a warning. In any non-dev deployment, set this to a
-    # random 32+ byte string. Operators can also set it to an
-    # empty string to explicitly disable auth (e.g. for
-    # trusted-network deployments); the server still emits a
-    # warning. Rotated by changing the env var and restarting
-    # the server — no clients have a long-lived token.
+    # Authentication is fail-closed by default. Set
+    # ZAQORIN_ALLOW_UNAUTHENTICATED=true only for explicitly isolated
+    # local development/test deployments.
     api_key: str = ""
-
-    # --- Role-based API auth (v2.1.0 IMP-1 second slice) ---
-    # Three named-role keys that supersede the single shared
-    # ``api_key``. Any subset may be set; unset roles are not
-    # accepted. The legacy ``api_key`` is still honoured and is
-    # treated as ``write`` so an in-place migration from F6 does
-    # not lock out the old secret.
     api_key_read: str = ""
     api_key_write: str = ""
     api_key_ingest: str = ""
+    allow_unauthenticated: bool = False
 
-    # --- Rate limiting (v2.3.0 IMP-2 first slice) ---
-    # Sliding-window per-key/IP rate limiter applied as middleware.
-    # Defaults are deliberately generous: 120 req/min = 2 rps average,
-    # which is well above what any ZaqorinCore endpoint needs and is
-    # below the threshold where the agent or operator dashboard would
-    # notice a slowdown. Set ``enabled`` to ``false`` to bypass the
-    # middleware entirely (e.g. for a benchmark or a trusted-network
-    # deploy where the limiter is wasted overhead).
     rate_limit_enabled: bool = True
     rate_limit_per_min: int = Field(default=120, ge=1, le=1_000_000)
-
-    # --- CORS allowlist (v3.2.3, F-010) ---
-    # Comma-separated list of origins permitted to call the API from
-    # a browser. Default empty = no CORS headers emitted, which means
-    # browsers reject cross-origin XHR/fetch (the safe default). When
-    # the operator dashboard lives on a separate domain, set this to
-    # that origin (e.g. "https://console.example.com"). Wildcard "*"
-    # is rejected at startup when ``allow_credentials`` would also be
-    # true (it is never true here, but the check is enforced).
     cors_origins: str = ""
-
-    # --- WebSocket DoS hardening (v3.2.3, F-009) ---
-    # Reject any single WS frame larger than this. 1 MiB is well above
-    # the largest legitimate event payload the server has ever seen
-    # (~10 KiB) but small enough to keep memory bounded against a
-    # flood. Lower for tighter environments; raise only with care.
     ws_max_msg_bytes: int = Field(default=1024 * 1024, ge=1024, le=16 * 1024 * 1024)
-    # Cap the message rate per WS connection. 100 msg/min = 1.7 msg/s
-    # sustained, ~50x the steady-state ingest rate of a single agent.
-    # Sustained overage drops the connection with code 1013.
     ws_max_msg_per_min: int = Field(default=100, ge=1, le=10_000)
 
 
@@ -155,7 +60,6 @@ _settings: Settings | None = None
 
 
 def get_settings() -> Settings:
-    """Return the singleton Settings. Created on first call."""
     global _settings
     if _settings is None:
         _settings = Settings()
@@ -163,7 +67,5 @@ def get_settings() -> Settings:
 
 
 def reset_settings() -> None:
-    """Drop the cached singleton. Tests use this to pick up
-    ``monkeypatch.setenv`` changes between cases."""
     global _settings
     _settings = None
