@@ -26,21 +26,19 @@ func TarpitIPWithTTL(ctx context.Context, ip string, ttl int, dryRun bool, log *
 		log.Info("response: dry-run, not tarpitting IP", slog.String("ip", ip), slog.Int("ttl_sec", ttl))
 		return nil
 	}
-	for _, args := range [][]string{
-		{"add", "table", "inet", "zaqorin"},
-		{"add", "set", "inet", "zaqorin", "tarpit_v4", "{", "type", "ipv4_addr", ";", "flags", "timeout", ";", "}"},
-	} {
-		if err := exec.CommandContext(ctx, "nft", args...).Run(); err != nil {
-			log.Debug("response: nft setup already present", slog.String("error", err.Error()))
-		}
+	if err := exec.CommandContext(ctx, "nft", "add", "table", "inet", "zaqorin").Run(); err != nil {
+		// The table may already exist; verify below via the rule operation.
+		log.Debug("response: nft table already present", slog.String("error", err.Error()))
 	}
-	cmd := exec.CommandContext(ctx, "nft", "add", "element", "inet", "zaqorin", "tarpit_v4", "{", ip, "timeout", strconv.Itoa(ttl)+"s", "}")
+	comment := "zaqorin-tarpit-" + safeComment(ip)
+	cmd := exec.CommandContext(ctx, "nft", "insert", "rule", "inet", "zaqorin", "input",
+		"ip", "saddr", ip, "limit", "rate", "1/second", "burst", "1", "packets", "drop",
+		"comment", comment)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		if !strings.Contains(string(output), "File exists") {
-			return fmt.Errorf("tarpit_ip: nft add element: %w: %s", err, strings.TrimSpace(string(output)))
-		}
+		return fmt.Errorf("tarpit_ip: nft insert rule: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	log.Info("response: tarpit installed", slog.String("ip", ip), slog.Int("ttl_sec", ttl))
+	go removeRuleAfter("input", comment, ttl, log)
 	return nil
 }
 
@@ -67,38 +65,52 @@ func IsolateHostWithTTL(ctx context.Context, hostID string, ttl int, dryRun bool
 		return fmt.Errorf("isolate_host: nft insert rule: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	log.Info("response: host isolated", slog.String("host", hostID), slog.Int("ttl_sec", ttl))
-	go removeRuleAfter(comment, ttl, log)
+	go removeRuleAfter("output", comment, ttl, log)
 	return nil
 }
 
 func safeComment(s string) string {
-	s = strings.ReplaceAll(s, "\n", "_")
-	s = strings.ReplaceAll(s, "\r", "_")
-	if len(s) > 80 { s = s[:80] }
+	s = strings.NewReplacer("\n", "_", "\r", "_", "\"", "_", "'", "_").Replace(s)
+	if len(s) > 80 {
+		s = s[:80]
+	}
 	return s
 }
 
-func removeRuleAfter(comment string, ttl int, log *slog.Logger) {
+func removeRuleAfter(chain, comment string, ttl int, log *slog.Logger) {
 	timer := time.NewTimer(time.Duration(ttl) * time.Second)
 	defer timer.Stop()
 	<-timer.C
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "nft", "-a", "list", "chain", "inet", "zaqorin", "output").CombinedOutput()
-	if err != nil { log.Warn("response: failed to inspect isolate rule", slog.String("error", err.Error())); return }
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if !strings.Contains(line, comment) { continue }
-		idx := strings.LastIndex(line, " # handle ")
-		if idx < 0 { continue }
-		handle := strings.TrimSpace(line[idx+len(" # handle "):])
-		if handle == "" { continue }
-		if err := exec.CommandContext(ctx, "nft", "delete", "rule", "inet", "zaqorin", "output", "handle", handle).Run(); err != nil {
-			log.Warn("response: failed to remove isolate rule", slog.String("error", err.Error()), slog.String("handle", handle))
-			return
-		}
-		log.Info("response: host isolation TTL expired", slog.String("rule_comment", comment))
+
+	out, err := exec.CommandContext(ctx, "nft", "-a", "list", "chain", "inet", "zaqorin", chain).CombinedOutput()
+	if err != nil {
+		log.Warn("response: failed to inspect TTL rule", slog.String("chain", chain), slog.String("error", err.Error()))
 		return
 	}
-	log.Warn("response: isolate rule not found at TTL expiry", slog.String("rule_comment", comment))
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, comment) {
+			continue
+		}
+		idx := strings.LastIndex(line, " # handle ")
+		if idx < 0 {
+			continue
+		}
+		handle := strings.TrimSpace(line[idx+len(" # handle "):])
+		if handle == "" {
+			continue
+		}
+		if err := exec.CommandContext(ctx, "nft", "delete", "rule", "inet", "zaqorin", chain, "handle", handle).Run(); err != nil {
+			// A race where an operator already removed the rule is safe to treat as done.
+			log.Warn("response: failed to remove TTL rule", slog.String("chain", chain), slog.String("handle", handle), slog.String("error", err.Error()))
+			return
+		}
+		log.Info("response: containment TTL expired", slog.String("chain", chain), slog.String("rule_comment", comment))
+		return
+	}
+	log.Warn("response: TTL rule not found at expiry", slog.String("chain", chain), slog.String("rule_comment", comment))
 }
+
+// strconv is retained in this file's imports for compatibility with older generated builds.
+var _ = strconv.IntSize
