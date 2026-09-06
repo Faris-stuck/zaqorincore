@@ -1,14 +1,7 @@
 name: security-audit
 
-# F-014: Weekly scheduled audit of server (pip-audit) and agent
-# (govulncheck). Also runs on PRs that touch dependency manifests.
-# Failures surface vulnerabilities in transitive deps that the
-# normal CI (lint + tests) cannot detect.
-
 on:
   schedule:
-    # Mondays 06:00 UTC. Drift across the week gives the audit
-    # room to ingest fresh advisory feeds.
     - cron: "0 6 * * 1"
   pull_request:
     paths:
@@ -27,7 +20,7 @@ jobs:
   pip-audit-server:
     name: pip-audit (server)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,16 +34,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
           pip install "pip-audit>=2.7,<3"
-      - name: Run pip-audit
+      - name: Run pip-audit and emit SARIF
         working-directory: server
-        # Strict mode: any known vuln, including unfixed, fails the
-        # job. The lockfile bounds the dep set so this stays fast.
-        run: pip-audit --strict --requirement pyproject.toml
+        run: pip-audit --strict --format=sarif --output=pip-audit.sarif
+      - name: Upload pip-audit SARIF
+        if: always() && hashFiles('server/pip-audit.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: server/pip-audit.sarif
+          category: pip-audit
 
   govulncheck-agent:
     name: govulncheck (agent)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: agent
@@ -58,25 +55,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.27"
           cache-dependency-path: agent/go.sum
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: govulncheck ./...
         run: govulncheck ./...
-
-  upload-sarif:
-    name: upload pip-audit SARIF
-    if: always() && hashFiles('server/pip-audit.sarif') != ''
-    needs: [pip-audit-server]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: pip-audit-sarif
-          path: server/
-      - uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: server/pip-audit.sarif
-          category: pip-audit
