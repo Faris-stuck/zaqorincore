@@ -20,12 +20,12 @@ const maxCommandClockSkew = 5 * time.Minute
 const maxAppliedCommandIDs = 10_000
 
 type Handler struct {
-	cfg      *config.Config
-	secret   []byte
-	log      *slog.Logger
-	mu       sync.Mutex
+	cfg       *config.Config
+	secret    []byte
+	log       *slog.Logger
+	mu        sync.Mutex
 	appliedAt map[string]time.Time
-	inFlight map[string]struct{}
+	inFlight  map[string]struct{}
 }
 
 func NewHandler(cfg *config.Config, log *slog.Logger) (*Handler, error) {
@@ -45,10 +45,10 @@ func NewHandler(cfg *config.Config, log *slog.Logger) (*Handler, error) {
 		return nil, fmt.Errorf("response: chmod state_dir: %w", err)
 	}
 	return &Handler{
-		cfg:      cfg,
-		log:      log,
+		cfg:       cfg,
+		log:       log,
 		appliedAt: make(map[string]time.Time),
-		inFlight: make(map[string]struct{}),
+		inFlight:  make(map[string]struct{}),
 	}, nil
 }
 
@@ -142,7 +142,7 @@ func (h *Handler) commandAllowed(kind string) bool {
 	}
 }
 
-func (h *Handler) reserveCommand(commandID string) (already bool) {
+func (h *Handler) reserveCommand(commandID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.appliedAt[commandID]; ok {
@@ -229,7 +229,7 @@ func (h *Handler) Handle(ctx context.Context, cmd Command) (string, error) {
 		}
 		applyErr = kinds.TarpitIPWithTTL(ctx, cmd.Target, ttl, h.cfg.DryRun, h.log)
 	case "canary_alert":
-		applyErr = kinds.CanaryAlert(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log)
+		applyErr = kinds.CanaryAlertUnderRoot(ctx, cmd.Target, h.cfg.StateDir, h.cfg.DryRun, h.log)
 	case "isolate_host":
 		ttl := cmd.TTLSec
 		if ttl <= 0 {
@@ -241,9 +241,9 @@ func (h *Handler) Handle(ctx context.Context, cmd Command) (string, error) {
 	case "quarantine_file":
 		applyErr = kinds.QuarantineFile(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log)
 	case "revoke_session":
-		applyErr = kinds.RevokeSession(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log)
+		applyErr = kinds.RevokeSessionState(ctx, cmd.Target, h.cfg.StateDir, h.cfg.DryRun, h.log)
 	case "webhook_soar":
-		applyErr = kinds.WebhookSOAR(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log)
+		applyErr = kinds.WebhookSOARStrict(ctx, cmd.Target, h.cfg.DryRun, h.log)
 	case "evidence_capture":
 		applyErr = kinds.EvidenceCapture(ctx, cmd.Target, cmd.TTLSec, h.cfg.DryRun, h.log)
 	default:
