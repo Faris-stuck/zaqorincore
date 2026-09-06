@@ -22,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -39,7 +39,7 @@ jobs:
         run: pip-audit --strict --format=sarif --output=pip-audit.sarif
       - name: Upload pip-audit SARIF
         if: always() && hashFiles('server/pip-audit.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: server/pip-audit.sarif
           category: pip-audit
@@ -52,8 +52,8 @@ jobs:
       run:
         working-directory: agent
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.27.1"
           cache-dependency-path: agent/go.sum
