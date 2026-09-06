@@ -1,10 +1,9 @@
 # ZaqorinCore agent configuration template.
 # The shared HMAC secret is stored separately at state_dir/secret.
 
-[connection]
-# Connection fields are kept at the root for compatibility with the loader.
 server_url = "wss://zaqorin.example.com:8443/ws/agent"
 agent_id = "auto"
+# Legacy compatibility field; authentication now uses state_dir/secret.
 auth_token = "unused-legacy-field"
 
 log_level = "info"
@@ -23,7 +22,6 @@ path = "/var/log/nginx/access.log"
 mode = "pull"
 
 [response]
-# Explicit local policy. New action kinds are denied unless enabled here.
 allow_block_ip = true
 allow_tarpit_ip = false
 allow_isolate_host = false
