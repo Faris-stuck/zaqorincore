@@ -1,12 +1,4 @@
-"""Wire-format Pydantic schemas.
-
-These mirror exactly what the v0.1.0 agent sends. Any new field the
-agent adds is a breaking change here too — that's by design, so we
-notice it.
-
-Frames (Phase 2 server only consumes hello/event/bye; command is
-parsed for forward-compat but the server never sends it back yet).
-"""
+"""Wire-format Pydantic schemas for the agent/server protocol."""
 
 from __future__ import annotations
 
@@ -17,40 +9,32 @@ from typing import Annotated, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# ---- inner objects ----------------------------------------------------
-
-
 class HelloFrame(BaseModel):
-    """Sent by the agent immediately on connect."""
+    """Authenticated agent HELLO for protocol v2."""
 
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["hello"] = "hello"
     agent_id: uuid.UUID
+    v: Literal[2]
     version: str = Field(..., min_length=1, max_length=32)
+    nonce: str = Field(..., min_length=64, max_length=64)
+    sig: str = Field(..., min_length=64, max_length=64)
 
 
 class EventInner(BaseModel):
-    """The 'event' object inside an EventFrame."""
-
-    # 'schema' is reserved on BaseModel; we use the field name
-    # 'event_schema' in Python and alias it to 'schema' on the wire.
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    event_schema: str = Field(
-        alias="schema", min_length=1, max_length=16
-    )
+    event_schema: str = Field(alias="schema", min_length=1, max_length=16)
     id: uuid.UUID
     timestamp: datetime
     host_id: uuid.UUID
     source: str = Field(..., min_length=1, max_length=255)
-    raw: str
+    raw: str = Field(..., max_length=64 * 1024)
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class EventFrame(BaseModel):
-    """One event from the agent."""
-
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["event"] = "event"
@@ -58,8 +42,6 @@ class EventFrame(BaseModel):
 
 
 class ByeFrame(BaseModel):
-    """Sent by the agent when shutting down."""
-
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["bye"] = "bye"
@@ -67,9 +49,6 @@ class ByeFrame(BaseModel):
 
 
 class CommandFrame(BaseModel):
-    """Server -> agent command. Phase 4 sends these; v0.1.0 agents
-    parse-and-ignore them (the field set is additive)."""
-
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["command"] = "command"
@@ -82,8 +61,6 @@ class CommandFrame(BaseModel):
 
 
 class CommandAckFrame(BaseModel):
-    """Agent -> server ack for a CommandFrame. Phase 4 introduces this."""
-
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["command_ack"] = "command_ack"
@@ -92,12 +69,6 @@ class CommandAckFrame(BaseModel):
     error: str | None = Field(default=None, max_length=512)
 
 
-# ---- discriminated union ----------------------------------------------
-
-
-# Pydantic v2 uses `Annotated[Union[...], Field(discriminator=...)]`.
-# The discriminator field is "type" on the wire, so Pydantic will pick
-# the right model based on the JSON.
 AgentFrame = Annotated[
     Union[HelloFrame, EventFrame, ByeFrame],
     Field(discriminator="type"),
