@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -27,7 +26,6 @@ func TarpitIPWithTTL(ctx context.Context, ip string, ttl int, dryRun bool, log *
 		return nil
 	}
 	if err := exec.CommandContext(ctx, "nft", "add", "table", "inet", "zaqorin").Run(); err != nil {
-		// The table may already exist; verify below via the rule operation.
 		log.Debug("response: nft table already present", slog.String("error", err.Error()))
 	}
 	comment := "zaqorin-tarpit-" + safeComment(ip)
@@ -102,7 +100,6 @@ func removeRuleAfter(chain, comment string, ttl int, log *slog.Logger) {
 			continue
 		}
 		if err := exec.CommandContext(ctx, "nft", "delete", "rule", "inet", "zaqorin", chain, "handle", handle).Run(); err != nil {
-			// A race where an operator already removed the rule is safe to treat as done.
 			log.Warn("response: failed to remove TTL rule", slog.String("chain", chain), slog.String("handle", handle), slog.String("error", err.Error()))
 			return
 		}
@@ -111,6 +108,3 @@ func removeRuleAfter(chain, comment string, ttl int, log *slog.Logger) {
 	}
 	log.Warn("response: TTL rule not found at expiry", slog.String("chain", chain), slog.String("rule_comment", comment))
 }
-
-// strconv is retained in this file's imports for compatibility with older generated builds.
-var _ = strconv.IntSize
