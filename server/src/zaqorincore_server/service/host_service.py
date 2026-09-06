@@ -20,25 +20,33 @@ async def upsert_on_hello(
     agent_id: uuid.UUID,
     version: str,
 ) -> Host:
-    """Update an already-provisioned host after authentication.
+    """Look up an already-provisioned host without mutating it.
 
-    Hosts are intentionally NOT created during an unauthenticated
-    WebSocket handshake. This prevents an attacker from spraying
-    random UUIDs into the hosts table and obtaining a durable DB row.
-    Provisioning must create the host first and establish its secret.
+    This function name is kept for API compatibility, but authentication
+    must happen before any host metadata is changed. A malformed or forged
+    HELLO therefore cannot refresh ``last_seen_at`` or overwrite the
+    advertised version of a real host.
     """
-    now = datetime.now(timezone.utc)
+    del version
     result = await session.execute(select(Host).where(Host.id == agent_id))
     host = result.scalar_one_or_none()
     if host is None:
         raise ValueError("unknown agent")
+    return host
 
-    host.last_seen_at = now
+
+async def mark_authenticated_hello(
+    session: AsyncSession,
+    host: Host,
+    *,
+    version: str,
+) -> Host:
+    """Record host liveness only after successful WebSocket authentication."""
+    host.last_seen_at = datetime.now(timezone.utc)
     host.last_version = version
     await session.flush()
-    await session.refresh(host)
     log.info(
-        "host hello updated",
+        "authenticated host hello updated",
         host_id=str(host.id),
         version=host.last_version,
         secret_present=bool(host.secret),
