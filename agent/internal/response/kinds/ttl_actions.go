@@ -10,14 +10,14 @@ import (
 	"time"
 )
 
-// TarpitIPWithTTL uses a dedicated nftables set whose elements expire
-// automatically. The chain rule remains operator-owned and stable.
+const maxContainmentTTLSeconds = 30 * 24 * 60 * 60
+
 func TarpitIPWithTTL(ctx context.Context, ip string, ttl int, dryRun bool, log *slog.Logger) error {
 	if !IsValidIPv4(ip) {
 		return fmt.Errorf("tarpit_ip: invalid IPv4 address %q", ip)
 	}
-	if ttl <= 0 || ttl > 30*24*60*60 {
-		return fmt.Errorf("tarpit_ip: ttl must be between 1 and 2592000 seconds")
+	if ttl <= 0 || ttl > maxContainmentTTLSeconds {
+		return fmt.Errorf("tarpit_ip: ttl must be between 1 and %d seconds", maxContainmentTTLSeconds)
 	}
 	if _, err := exec.LookPath("nft"); err != nil {
 		return fmt.Errorf("tarpit_ip: nft binary not found: %w", err)
@@ -31,13 +31,9 @@ func TarpitIPWithTTL(ctx context.Context, ip string, ttl int, dryRun bool, log *
 		{"add", "set", "inet", "zaqorin", "tarpit_v4", "{", "type", "ipv4_addr", ";", "flags", "timeout", ";", "}"},
 	} {
 		if err := exec.CommandContext(ctx, "nft", args...).Run(); err != nil {
-			// These resources are intentionally idempotent from the
-			// executor's perspective; they may already exist.
 			log.Debug("response: nft setup already present", slog.String("error", err.Error()))
 		}
 	}
-	// The set element carries the actual TTL. The operator should
-	// install once: `ip saddr @tarpit_v4 limit rate 1/second burst 1 drop`.
 	cmd := exec.CommandContext(ctx, "nft", "add", "element", "inet", "zaqorin", "tarpit_v4", "{", ip, "timeout", strconv.Itoa(ttl)+"s", "}")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if !strings.Contains(string(output), "File exists") {
@@ -48,15 +44,12 @@ func TarpitIPWithTTL(ctx context.Context, ip string, ttl int, dryRun bool, log *
 	return nil
 }
 
-// IsolateHostWithTTL inserts a uniquely-commented output drop rule and
-// removes exactly that rule after the requested TTL. It never flushes a
-// chain and therefore cannot accidentally delete unrelated firewall rules.
 func IsolateHostWithTTL(ctx context.Context, hostID string, ttl int, dryRun bool, log *slog.Logger) error {
 	if strings.TrimSpace(hostID) == "" {
 		return fmt.Errorf("isolate_host: empty host id")
 	}
-	if ttl <= 0 || ttl > 24*time.Hour/time.Second*30 {
-		return fmt.Errorf("isolate_host: ttl must be between 1 and 2592000 seconds")
+	if ttl <= 0 || ttl > maxContainmentTTLSeconds {
+		return fmt.Errorf("isolate_host: ttl must be between 1 and %d seconds", maxContainmentTTLSeconds)
 	}
 	if _, err := exec.LookPath("nft"); err != nil {
 		return fmt.Errorf("isolate_host: nft binary not found: %w", err)
